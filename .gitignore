@@ -1,0 +1,6 @@
+.env
+.gocache/
+bin/
+dist/
+coverage.out
+.gomodcache/
