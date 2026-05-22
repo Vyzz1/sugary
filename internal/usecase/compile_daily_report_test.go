@@ -80,3 +80,95 @@ func TestCompileDailyReportExecute(t *testing.T) {
 		t.Fatalf("expected average sugar 20.5, got %v", report.AverageSugarGrams)
 	}
 }
+
+func TestCompileDailyReportExecuteSkipsUnanalyzedMealsInAverage(t *testing.T) {
+	t.Parallel()
+
+	day := time.Date(2026, 5, 21, 15, 0, 0, 0, time.UTC)
+
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			createFn: func(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
+				return meal, nil
+			},
+			listByDayFn: func(ctx context.Context, requested time.Time) ([]domain.Meal, error) {
+				return []domain.Meal{
+					{
+						DishName: "Milk tea",
+						Analysis: &domain.Nutrition{
+							EstimatedSugarGrams: 30,
+							RiskLevel:           "high",
+						},
+					},
+					{
+						DishName: "Unknown",
+						Analysis: nil,
+					},
+				}, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error { return nil },
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{}, false, nil
+			},
+		},
+	)
+
+	report, err := uc.Execute(context.Background(), day)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if report.MealCount != 2 {
+		t.Fatalf("expected meal count 2, got %d", report.MealCount)
+	}
+	if report.TotalSugarGrams != 30 {
+		t.Fatalf("expected total sugar 30, got %v", report.TotalSugarGrams)
+	}
+	if report.AverageSugarGrams != 30 {
+		t.Fatalf("expected average sugar 30, got %v", report.AverageSugarGrams)
+	}
+	if report.HighestRiskLevel != "high" {
+		t.Fatalf("expected highest risk high, got %q", report.HighestRiskLevel)
+	}
+}
+
+func TestCompileDailyReportExecuteNoAnalyzedMeals(t *testing.T) {
+	t.Parallel()
+
+	day := time.Date(2026, 5, 21, 15, 0, 0, 0, time.UTC)
+
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			createFn: func(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
+				return meal, nil
+			},
+			listByDayFn: func(ctx context.Context, requested time.Time) ([]domain.Meal, error) {
+				return []domain.Meal{
+					{DishName: "Meal 1"},
+					{DishName: "Meal 2"},
+				}, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error { return nil },
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{}, false, nil
+			},
+		},
+	)
+
+	report, err := uc.Execute(context.Background(), day)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if report.TotalSugarGrams != 0 {
+		t.Fatalf("expected total sugar 0, got %v", report.TotalSugarGrams)
+	}
+	if report.AverageSugarGrams != 0 {
+		t.Fatalf("expected average sugar 0, got %v", report.AverageSugarGrams)
+	}
+	if report.HighestRiskLevel != "unknown" {
+		t.Fatalf("expected highest risk unknown, got %q", report.HighestRiskLevel)
+	}
+}

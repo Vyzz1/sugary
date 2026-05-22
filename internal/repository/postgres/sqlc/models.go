@@ -20,6 +20,7 @@ type DailyReport struct {
 type Meal struct {
 	ID                  int64              `json:"id"`
 	DishName            string             `json:"dish_name"`
+	MealType            string             `json:"meal_type"`
 	ImageUrl            *string            `json:"image_url"`
 	RecordedAt          pgtype.Timestamptz `json:"recorded_at"`
 	AnalysisStatus      string             `json:"analysis_status"`

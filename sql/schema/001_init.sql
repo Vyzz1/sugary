@@ -1,6 +1,7 @@
 CREATE TABLE meals (
     id BIGSERIAL PRIMARY KEY,
     dish_name TEXT NOT NULL,
+    meal_type TEXT NOT NULL DEFAULT 'unspecified',
     image_url TEXT,
     recorded_at TIMESTAMPTZ NOT NULL,
     analysis_status TEXT NOT NULL,

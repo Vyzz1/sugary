@@ -16,7 +16,9 @@ func NewRouter(
 	reportHandler handler.ReportHandler,
 	jobHandler handler.JobHandler,
 ) *gin.Engine {
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(middleware.RequestLogger())
 	router.GET("/health", healthHandler.Check)
 	api := router.Group("/api")
 	{

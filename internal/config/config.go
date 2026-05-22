@@ -13,6 +13,7 @@ const defaultPort = "8080"
 type Config struct {
 	AppEnv       string
 	Port         string
+	LogLevel     string
 	GeminiAPIKey string
 	GeminiModel  string
 	Auth         AuthConfig
@@ -51,6 +52,7 @@ func Load() Config {
 	return Config{
 		AppEnv:       getEnv("APP_ENV", "development"),
 		Port:         getEnv("PORT", getEnv("APP_PORT", defaultPort)),
+		LogLevel:     getEnv("LOG_LEVEL", "info"),
 		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
 		GeminiModel:  getEnv("GEMINI_MODEL", "gemini-2.5-flash"),
 		Auth: AuthConfig{

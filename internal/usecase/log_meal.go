@@ -31,6 +31,11 @@ func (uc LogMeal) Execute(ctx context.Context, input domain.LogMealInput) (domai
 		recordedAt = time.Now().UTC()
 	}
 
+	mealType := strings.TrimSpace(strings.ToLower(input.MealType))
+	if mealType == "" {
+		mealType = domain.MealTypeUnspecified
+	}
+
 	nutrition, err := uc.nutritionAnalyzer.AnalyzeMeal(ctx, domain.AnalyzeMealInput{
 		DishName: dishName,
 		ImageURL: input.ImageURL,
@@ -41,6 +46,7 @@ func (uc LogMeal) Execute(ctx context.Context, input domain.LogMealInput) (domai
 
 	meal := domain.Meal{
 		DishName:       dishName,
+		MealType:       mealType,
 		ImageURL:       input.ImageURL,
 		RecordedAt:     recordedAt,
 		AnalysisStatus: "completed",

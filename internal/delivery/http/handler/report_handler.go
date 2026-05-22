@@ -38,13 +38,13 @@ func NewReportHandler(
 func (h ReportHandler) GetDaily(ctx *gin.Context) {
 	dayParam := ctx.Query("date")
 	if dayParam == "" {
-		ctx.JSON(http.StatusBadRequest, httpresponse.Fail("missing_date", "date is required in YYYY-MM-DD format"))
+		ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "missing_date", "date is required in YYYY-MM-DD format"))
 		return
 	}
 
 	day, err := time.Parse("2006-01-02", dayParam)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, httpresponse.Fail("invalid_date", "date must be YYYY-MM-DD"))
+		ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_date", "date must be YYYY-MM-DD"))
 		return
 	}
 
@@ -55,14 +55,14 @@ func (h ReportHandler) GetDaily(ctx *gin.Context) {
 			status = http.StatusBadRequest
 		}
 
-		ctx.JSON(status, httpresponse.Fail("daily_report_failed", err.Error()))
+		ctx.JSON(status, httpresponse.Fail(ctx, "daily_report_failed", err.Error()))
 		return
 	}
 
 	if !found {
-		ctx.JSON(http.StatusNotFound, httpresponse.Fail("daily_report_not_found", "daily report not found"))
+		ctx.JSON(http.StatusNotFound, httpresponse.Fail(ctx, "daily_report_not_found", "daily report not found"))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, httpresponse.OK(report))
+	ctx.JSON(http.StatusOK, httpresponse.OK(ctx, report))
 }

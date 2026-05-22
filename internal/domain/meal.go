@@ -2,12 +2,22 @@ package domain
 
 import (
 	"context"
+	"strings"
 	"time"
+)
+
+const (
+	MealTypeBreakfast   = "breakfast"
+	MealTypeLunch       = "lunch"
+	MealTypeDinner      = "dinner"
+	MealTypeSnack       = "snack"
+	MealTypeUnspecified = "unspecified"
 )
 
 type Meal struct {
 	ID             int64      `json:"id"`
 	DishName       string     `json:"dish_name"`
+	MealType       string     `json:"meal_type"`
 	ImageURL       *string    `json:"image_url,omitempty"`
 	RecordedAt     time.Time  `json:"recorded_at"`
 	AnalysisStatus string     `json:"analysis_status"`
@@ -23,6 +33,7 @@ type Nutrition struct {
 
 type LogMealInput struct {
 	DishName   string
+	MealType   string
 	ImageURL   *string
 	RecordedAt time.Time
 }
@@ -39,4 +50,13 @@ type NutritionAnalyzer interface {
 type AnalyzeMealInput struct {
 	DishName string
 	ImageURL *string
+}
+
+func IsValidMealType(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case MealTypeBreakfast, MealTypeLunch, MealTypeDinner, MealTypeSnack, MealTypeUnspecified:
+		return true
+	default:
+		return false
+	}
 }

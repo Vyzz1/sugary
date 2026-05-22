@@ -13,13 +13,13 @@ import (
 func JWT(secret string) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if strings.TrimSpace(secret) == "" {
-			ctx.AbortWithStatusJSON(http.StatusInternalServerError, httpresponse.Fail("missing_jwt_secret", "jwt secret is not configured"))
+			ctx.AbortWithStatusJSON(http.StatusInternalServerError, httpresponse.Fail(ctx, "missing_jwt_secret", "jwt secret is not configured"))
 			return
 		}
 
 		tokenString := bearerToken(ctx.GetHeader("Authorization"))
 		if tokenString == "" {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, httpresponse.Fail("missing_token", "missing bearer token"))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, httpresponse.Fail(ctx, "missing_token", "missing bearer token"))
 			return
 		}
 
@@ -28,7 +28,7 @@ func JWT(secret string) gin.HandlerFunc {
 			return []byte(secret), nil
 		})
 		if err != nil || !token.Valid {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, httpresponse.Fail("invalid_token", "invalid token"))
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, httpresponse.Fail(ctx, "invalid_token", "invalid token"))
 			return
 		}
 

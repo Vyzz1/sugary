@@ -25,7 +25,7 @@ func (h JobHandler) RunDailyReport(ctx *gin.Context) {
 	if dayParam != "" {
 		parsed, err := time.Parse("2006-01-02", dayParam)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, httpresponse.Fail("invalid_date", "date must be YYYY-MM-DD"))
+			ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_date", "date must be YYYY-MM-DD"))
 			return
 		}
 		day = parsed
@@ -33,9 +33,9 @@ func (h JobHandler) RunDailyReport(ctx *gin.Context) {
 
 	report, err := h.reportHandler.compileDailyReport.Execute(ctx.Request.Context(), day)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, httpresponse.Fail("daily_report_failed", err.Error()))
+		ctx.JSON(http.StatusInternalServerError, httpresponse.Fail(ctx, "daily_report_failed", err.Error()))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, httpresponse.OK(report))
+	ctx.JSON(http.StatusOK, httpresponse.OK(ctx, report))
 }

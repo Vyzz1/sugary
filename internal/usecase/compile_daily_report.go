@@ -40,6 +40,7 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 	}
 
 	if len(meals) == 0 {
+		report.HighestRiskLevel = "unknown"
 		report.Summary = "No meals were recorded for the selected day."
 		if err := uc.dailyReportRepository.Save(ctx, report); err != nil {
 			return domain.DailyReport{}, err
@@ -48,7 +49,8 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 	}
 
 	var totalSugar float64
-	highestRisk := "low"
+	highestRisk := "unknown"
+	analyzedMealCount := 0
 
 	for _, meal := range meals {
 		report.MealCount++
@@ -56,21 +58,30 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 			continue
 		}
 
+		analyzedMealCount++
 		totalSugar += meal.Analysis.EstimatedSugarGrams
-		if compareRisk(meal.Analysis.RiskLevel, highestRisk) > 0 {
+		if highestRisk == "unknown" || compareRisk(meal.Analysis.RiskLevel, highestRisk) > 0 {
 			highestRisk = meal.Analysis.RiskLevel
 		}
 	}
 
 	report.TotalSugarGrams = totalSugar
-	report.AverageSugarGrams = totalSugar / float64(len(meals))
 	report.HighestRiskLevel = highestRisk
-	report.Summary = fmt.Sprintf(
-		"%d meals logged. Estimated sugar intake %.1fg. Highest meal risk: %s.",
-		report.MealCount,
-		report.TotalSugarGrams,
-		report.HighestRiskLevel,
-	)
+	if analyzedMealCount == 0 {
+		report.Summary = fmt.Sprintf(
+			"%d meals logged, but nutrition analysis is not available yet.",
+			report.MealCount,
+		)
+	} else {
+		report.AverageSugarGrams = totalSugar / float64(analyzedMealCount)
+		report.Summary = fmt.Sprintf(
+			"%d meals logged (%d analyzed). Estimated sugar intake %.1fg. Highest meal risk: %s.",
+			report.MealCount,
+			analyzedMealCount,
+			report.TotalSugarGrams,
+			report.HighestRiskLevel,
+		)
+	}
 
 	if err := uc.dailyReportRepository.Save(ctx, report); err != nil {
 		return domain.DailyReport{}, err

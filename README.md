@@ -29,6 +29,7 @@ Create a local `.env` from `.env.example` when you want to override defaults:
 
 ```bash
 APP_ENV=development
+LOG_LEVEL=info
 APP_PORT=8080
 PORT=10000
 GEMINI_API_KEY=your-gemini-key
@@ -62,17 +63,21 @@ docker compose down
 ## Example API flow
 
 ```bash
+curl -X POST http://localhost:8080/login \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"admin\",\"password\":\"change-me\"}"
+
+# then use returned access_token
 curl -X POST http://localhost:8080/meals \
   -H "Content-Type: application/json" \
-  -d "{\"dish_name\":\"milk tea\",\"recorded_at\":\"2026-05-21T12:00:00Z\"}"
-
-curl -X POST "http://localhost:8080/jobs/daily-report?date=2026-05-21"
-
-curl "http://localhost:8080/reports/daily?date=2026-05-21"
-
-curl -X POST "http://localhost:8080/meals/1/image" \
   -H "Authorization: Bearer <token>" \
-  -F "image=@/path/to/photo.jpg"
+  -d "{\"dish_name\":\"milk tea\",\"meal_type\":\"lunch\",\"recorded_at\":\"2026-05-21T12:00:00Z\"}"
+
+curl -X POST "http://localhost:8080/jobs/daily-report?date=2026-05-21" \
+  -H "Authorization: Bearer <token>"
+
+curl "http://localhost:8080/reports/daily?date=2026-05-21" \
+  -H "Authorization: Bearer <token>"
 ```
 
 ## API Response Shape
@@ -83,6 +88,56 @@ Successful responses use:
 {
   "success": true,
   "data": {}
+}
+```
+
+## Auth Implementation
+
+- `POST /login` is public and returns a JWT.
+- Credentials are configured via `LOGIN_USER` and `LOGIN_PASSWORD`.
+- JWT signing key and TTL are controlled by `JWT_SECRET` and `JWT_EXPIRES_IN`.
+- All business routes require `Authorization: Bearer <token>`:
+  - `POST /meals`
+  - `POST /jobs/daily-report`
+  - `GET /reports/daily`
+- `GET /health` remains public.
+
+Login success response example:
+
+```json
+{
+  "success": true,
+  "data": {
+    "access_token": "<jwt>",
+    "token_type": "Bearer",
+    "expires_in": "24h"
+  }
+}
+```
+
+## Request Validation
+
+`POST /login`:
+- `username` is required and trimmed.
+- `password` is required and trimmed.
+
+`POST /meals`:
+- `dish_name` is required and trimmed.
+- `meal_type` is optional. Allowed values: `breakfast`, `lunch`, `dinner`, `snack`, `unspecified`.
+- If `meal_type` is omitted, backend defaults it to `unspecified`.
+- `recorded_at` must be RFC3339 if provided.
+- `image_url` is optional; if provided it must be a non-empty `http/https` URL.
+- backend calls Gemini AI during meal creation; `GEMINI_API_KEY` must be configured, otherwise `POST /meals` fails.
+
+Validation errors return structured codes, for example:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "invalid_image_url",
+    "message": "image_url must be a valid http/https URL"
+  }
 }
 ```
 
@@ -120,3 +175,4 @@ Errors use:
 - `LOGIN_USER` / `LOGIN_PASSWORD`: shared login credentials for `/login`
 - `JWT_SECRET`: signing secret for issued tokens
 - `JWT_EXPIRES_IN`: token lifetime, for example `24h`
+- `LOG_LEVEL`: `debug|info|warn|error` for structured JSON logs

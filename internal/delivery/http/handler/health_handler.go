@@ -20,5 +20,5 @@ func NewHealthHandler() HealthHandler {
 }
 
 func (h HealthHandler) Check(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, httpresponse.OK(h.healthCheck.Execute()))
+	ctx.JSON(http.StatusOK, httpresponse.OK(ctx, h.healthCheck.Execute()))
 }

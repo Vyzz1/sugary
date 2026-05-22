@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,18 +30,25 @@ func NewAuthHandler(auth config.AuthConfig) AuthHandler {
 func (h AuthHandler) Login(ctx *gin.Context) {
 	var request loginRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
-		ctx.JSON(http.StatusBadRequest, httpresponse.Fail("bad_request", err.Error()))
+		ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "bad_request", err.Error()))
+		return
+	}
+
+	request.Username = strings.TrimSpace(request.Username)
+	request.Password = strings.TrimSpace(request.Password)
+	if request.Username == "" || request.Password == "" {
+		ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "missing_credentials", "username and password are required"))
 		return
 	}
 
 	if request.Username != h.auth.LoginUser || request.Password != h.auth.LoginPassword {
-		ctx.JSON(http.StatusUnauthorized, httpresponse.Fail("invalid_credentials", "invalid credentials"))
+		ctx.JSON(http.StatusUnauthorized, httpresponse.Fail(ctx, "invalid_credentials", "invalid credentials"))
 		return
 	}
 
 	expiresIn, err := time.ParseDuration(h.auth.JWTExpiresIn)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, httpresponse.Fail("invalid_config", "invalid jwt expiry configuration"))
+		ctx.JSON(http.StatusInternalServerError, httpresponse.Fail(ctx, "invalid_config", "invalid jwt expiry configuration"))
 		return
 	}
 
@@ -54,11 +62,11 @@ func (h AuthHandler) Login(ctx *gin.Context) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString([]byte(h.auth.JWTSecret))
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, httpresponse.Fail("token_sign_failed", "failed to sign token"))
+		ctx.JSON(http.StatusInternalServerError, httpresponse.Fail(ctx, "token_sign_failed", "failed to sign token"))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, httpresponse.OK(gin.H{
+	ctx.JSON(http.StatusOK, httpresponse.OK(ctx, gin.H{
 		"access_token": signed,
 		"token_type":   "Bearer",
 		"expires_in":   h.auth.JWTExpiresIn,

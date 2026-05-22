@@ -4,9 +4,12 @@ import (
 	"context"
 	"log"
 
+	"go.uber.org/zap"
+
 	"sugary/internal/config"
 	httpdelivery "sugary/internal/delivery/http"
 	"sugary/internal/delivery/http/handler"
+	"sugary/internal/platform/logging"
 	"sugary/internal/repository/ai"
 	"sugary/internal/repository/postgres"
 	"sugary/internal/usecase"
@@ -14,17 +17,24 @@ import (
 
 func main() {
 	cfg := config.Load()
+	logger, err := logging.New(cfg.LogLevel)
+	if err != nil {
+		log.Fatalf("failed to initialize logger: %v", err)
+	}
+	defer logger.Sync()
+	zap.ReplaceGlobals(logger)
 	ctx := context.Background()
 
 	store, err := postgres.NewStore(ctx, cfg.Postgres)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("postgres_connect_failed", zap.Error(err))
+		return
 	}
 	defer store.Close()
 
 	mealRepository := postgres.NewMealRepository(store.Queries)
 	dailyReportRepository := postgres.NewDailyReportRepository(store.Queries)
-	nutritionAnalyzer := ai.NewStubNutritionAnalyzer()
+	nutritionAnalyzer := ai.NewGeminiNutritionAnalyzer(cfg.GeminiAPIKey, cfg.GeminiModel)
 
 	logMeal := usecase.NewLogMeal(mealRepository, nutritionAnalyzer)
 	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository)
@@ -44,6 +54,6 @@ func main() {
 	)
 
 	if err := router.Run(":" + cfg.Port); err != nil {
-		log.Fatal(err)
+		logger.Error("http_server_failed", zap.Error(err), zap.String("port", cfg.Port))
 	}
 }

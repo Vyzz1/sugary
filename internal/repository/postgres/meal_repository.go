@@ -24,6 +24,7 @@ func NewMealRepository(queries *reposqlc.Queries) MealRepository {
 func (r MealRepository) Create(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
 	params := reposqlc.CreateMealParams{
 		DishName:            meal.DishName,
+		MealType:            meal.MealType,
 		ImageUrl:            meal.ImageURL,
 		RecordedAt:          pgtype.Timestamptz{Time: meal.RecordedAt.UTC(), Valid: true},
 		AnalysisStatus:      meal.AnalysisStatus,
@@ -62,6 +63,7 @@ func mapMealRow(row reposqlc.Meal) domain.Meal {
 	return domain.Meal{
 		ID:             row.ID,
 		DishName:       row.DishName,
+		MealType:       row.MealType,
 		ImageURL:       row.ImageUrl,
 		RecordedAt:     row.RecordedAt.Time,
 		AnalysisStatus: row.AnalysisStatus,

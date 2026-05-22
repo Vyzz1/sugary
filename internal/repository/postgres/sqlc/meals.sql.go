@@ -14,6 +14,7 @@ import (
 const createMeal = `-- name: CreateMeal :one
 INSERT INTO meals (
     dish_name,
+    meal_type,
     image_url,
     recorded_at,
     analysis_status,
@@ -29,13 +30,15 @@ INSERT INTO meals (
     $5,
     $6,
     $7,
-    $8
+    $8,
+    $9
 )
-RETURNING id, dish_name, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_calories, risk_level, analysis_notes
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_calories, risk_level, analysis_notes
 `
 
 type CreateMealParams struct {
 	DishName            string             `json:"dish_name"`
+	MealType            string             `json:"meal_type"`
 	ImageUrl            *string            `json:"image_url"`
 	RecordedAt          pgtype.Timestamptz `json:"recorded_at"`
 	AnalysisStatus      string             `json:"analysis_status"`
@@ -48,6 +51,7 @@ type CreateMealParams struct {
 func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, error) {
 	row := q.db.QueryRow(ctx, createMeal,
 		arg.DishName,
+		arg.MealType,
 		arg.ImageUrl,
 		arg.RecordedAt,
 		arg.AnalysisStatus,
@@ -60,6 +64,7 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 	err := row.Scan(
 		&i.ID,
 		&i.DishName,
+		&i.MealType,
 		&i.ImageUrl,
 		&i.RecordedAt,
 		&i.AnalysisStatus,
@@ -72,7 +77,7 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 }
 
 const listMealsByDay = `-- name: ListMealsByDay :many
-SELECT id, dish_name, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_calories, risk_level, analysis_notes
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_calories, risk_level, analysis_notes
 FROM meals
 WHERE recorded_at >= $1
   AND recorded_at < $2
@@ -96,6 +101,7 @@ func (q *Queries) ListMealsByDay(ctx context.Context, arg ListMealsByDayParams) 
 		if err := rows.Scan(
 			&i.ID,
 			&i.DishName,
+			&i.MealType,
 			&i.ImageUrl,
 			&i.RecordedAt,
 			&i.AnalysisStatus,

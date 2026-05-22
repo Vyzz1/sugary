@@ -48,6 +48,9 @@ func TestLogMealExecute(t *testing.T) {
 				if meal.DishName != "Banh mi" {
 					t.Fatalf("expected trimmed dish name, got %q", meal.DishName)
 				}
+				if meal.MealType != domain.MealTypeUnspecified {
+					t.Fatalf("expected default meal_type %q, got %q", domain.MealTypeUnspecified, meal.MealType)
+				}
 				if meal.Analysis == nil || meal.Analysis.RiskLevel != "medium" {
 					t.Fatalf("expected analyzed meal, got %+v", meal.Analysis)
 				}
@@ -80,6 +83,37 @@ func TestLogMealExecute(t *testing.T) {
 	}
 	if got.Analysis == nil || got.Analysis.EstimatedSugarGrams != expectedNutrition.EstimatedSugarGrams {
 		t.Fatalf("expected analysis %+v, got %+v", expectedNutrition, got.Analysis)
+	}
+}
+
+func TestLogMealExecuteKeepsProvidedMealType(t *testing.T) {
+	t.Parallel()
+
+	uc := NewLogMeal(
+		stubMealRepository{
+			createFn: func(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
+				return meal, nil
+			},
+			listByDayFn: func(ctx context.Context, day time.Time) ([]domain.Meal, error) {
+				return nil, nil
+			},
+		},
+		stubNutritionAnalyzer{
+			analyzeFn: func(ctx context.Context, input domain.AnalyzeMealInput) (domain.Nutrition, error) {
+				return domain.Nutrition{RiskLevel: "low"}, nil
+			},
+		},
+	)
+
+	got, err := uc.Execute(context.Background(), domain.LogMealInput{
+		DishName: "Pho",
+		MealType: "LUNCH",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if got.MealType != domain.MealTypeLunch {
+		t.Fatalf("expected meal_type %q, got %q", domain.MealTypeLunch, got.MealType)
 	}
 }
 
