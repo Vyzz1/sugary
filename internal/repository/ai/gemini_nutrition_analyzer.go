@@ -142,7 +142,8 @@ Return STRICT JSON only with this shape:
 
 Rules:
 - risk_level low if sugar < 10g, medium if 10-25g, high if >25g.
-- notes must be concise and practical.
+- notes must be concise, practical, and written in English.
+- keep dish_name semantics from the input; do not translate the dish name because it is not part of the output schema.
 - no markdown, no extra keys, no explanation text.`, input.DishName, imageURL)
 }
 

@@ -11,7 +11,7 @@ import (
 )
 
 type Querier interface {
-	CountRecentDistinctMeals(ctx context.Context, dollar_1 string) (int64, error)
+	CountRecentDistinctMeals(ctx context.Context, queryText string) (int64, error)
 	CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, error)
 	GetDailyReportByDate(ctx context.Context, reportDate pgtype.Date) (DailyReport, error)
 	GetMealByID(ctx context.Context, id int64) (Meal, error)

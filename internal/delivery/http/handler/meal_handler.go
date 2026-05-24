@@ -41,7 +41,7 @@ type editMealUseCase interface {
 }
 
 type listMealsByDayUseCase interface {
-	Execute(ctx context.Context, day time.Time) ([]domain.Meal, time.Time, error)
+	Execute(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, domain.MealsByDayFilter, error)
 }
 
 type listRecentMealsUseCase interface {
@@ -169,31 +169,45 @@ func (h MealHandler) Create(ctx *gin.Context) {
 }
 
 func (h MealHandler) ListByDay(ctx *gin.Context) {
-	day := time.Now().UTC()
+	sortValue := strings.TrimSpace(ctx.Query("sort"))
+	if sortValue == "" {
+		sortValue = strings.TrimSpace(ctx.Query("sortby"))
+	}
+
+	filter := domain.MealsByDayFilter{
+		Day:  time.Now().UTC(),
+		Sort: sortValue,
+	}
 	if dayParam := strings.TrimSpace(ctx.Query("date")); dayParam != "" {
 		parsed, err := time.Parse("2006-01-02", dayParam)
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_date", "date must be YYYY-MM-DD"))
 			return
 		}
-		day = parsed
+		filter.Day = parsed
 	}
 
-	meals, normalizedDay, err := h.listMealsByDay.Execute(ctx.Request.Context(), day)
+	meals, normalized, err := h.listMealsByDay.Execute(ctx.Request.Context(), filter)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpresponse.Fail(ctx, "list_meals_failed", err.Error()))
 		return
 	}
 
 	ctx.JSON(http.StatusOK, httpresponse.OKWithMeta(ctx, meals, gin.H{
-		"date":  normalizedDay.Format("2006-01-02"),
+		"date":  normalized.Day.Format("2006-01-02"),
+		"sort":  normalized.Sort,
 		"count": len(meals),
 	}))
 }
 
 func (h MealHandler) ListRecent(ctx *gin.Context) {
+	query := strings.TrimSpace(ctx.Query("q"))
+	if query == "" {
+		query = strings.TrimSpace(ctx.Query("query"))
+	}
+
 	filter := domain.RecentMealsFilter{
-		Query:    strings.TrimSpace(ctx.Query("q")),
+		Query:    query,
 		Sort:     strings.TrimSpace(ctx.Query("sort")),
 		Page:     1,
 		PageSize: 20,

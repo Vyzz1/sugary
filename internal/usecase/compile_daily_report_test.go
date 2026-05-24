@@ -40,9 +40,9 @@ func TestCompileDailyReportExecute(t *testing.T) {
 			createFn: func(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
 				return meal, nil
 			},
-			listByDayFn: func(ctx context.Context, requested time.Time) ([]domain.Meal, error) {
-				if requested.Hour() != 0 {
-					t.Fatalf("expected day to be normalized, got %v", requested)
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				if filter.Day.Hour() != 0 {
+					t.Fatalf("expected day to be normalized, got %v", filter.Day)
 				}
 				return []domain.Meal{
 					{
@@ -114,7 +114,7 @@ func TestCompileDailyReportExecuteSkipsUnanalyzedMealsInAverage(t *testing.T) {
 			createFn: func(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
 				return meal, nil
 			},
-			listByDayFn: func(ctx context.Context, requested time.Time) ([]domain.Meal, error) {
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return []domain.Meal{
 					{
 						DishName: "Milk tea",
@@ -177,7 +177,7 @@ func TestCompileDailyReportExecuteNoAnalyzedMeals(t *testing.T) {
 			createFn: func(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
 				return meal, nil
 			},
-			listByDayFn: func(ctx context.Context, requested time.Time) ([]domain.Meal, error) {
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return []domain.Meal{
 					{DishName: "Meal 1"},
 					{DishName: "Meal 2"},

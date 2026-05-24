@@ -34,7 +34,13 @@ FROM meals
 WHERE recorded_at >= sqlc.arg(day_start)
   AND recorded_at < sqlc.arg(day_end)
   AND deleted_at IS NULL
-ORDER BY recorded_at ASC;
+ORDER BY
+    CASE WHEN sqlc.arg(sort_type)::text = 'created_asc' THEN recorded_at END ASC,
+    CASE WHEN sqlc.arg(sort_type)::text = 'created_desc' THEN recorded_at END DESC,
+    CASE WHEN sqlc.arg(sort_type)::text = 'name_asc' THEN unaccent(lower(dish_name)) END ASC,
+    CASE WHEN sqlc.arg(sort_type)::text = 'name_desc' THEN unaccent(lower(dish_name)) END DESC,
+    recorded_at DESC, 
+    id DESC;
 
 -- name: ListRecentDistinctMeals :many
 WITH distinct_meals AS (
@@ -55,7 +61,7 @@ WITH distinct_meals AS (
         deleted_at
     FROM meals
     WHERE deleted_at IS NULL
-      AND ($1::text = '' OR dish_name ILIKE '%' || $1 || '%')
+      AND (sqlc.arg(query_text)::text = '' OR unaccent(lower(dish_name)) LIKE '%' || unaccent(lower(sqlc.arg(query_text)::text)) || '%')
     ORDER BY lower(dish_name), COALESCE(image_url, ''), recorded_at DESC, id DESC
 )
 SELECT *
@@ -63,8 +69,8 @@ FROM distinct_meals
 ORDER BY
     CASE WHEN sqlc.arg(sort_type)::text = 'created_asc' THEN recorded_at END ASC,
     CASE WHEN sqlc.arg(sort_type)::text = 'created_desc' THEN recorded_at END DESC,
-    CASE WHEN sqlc.arg(sort_type)::text = 'name_asc' THEN lower(dish_name) END ASC,
-    CASE WHEN sqlc.arg(sort_type)::text = 'name_desc' THEN lower(dish_name) END DESC,
+    CASE WHEN sqlc.arg(sort_type)::text = 'name_asc' THEN unaccent(lower(dish_name)) END ASC,
+    CASE WHEN sqlc.arg(sort_type)::text = 'name_desc' THEN unaccent(lower(dish_name)) END DESC,
     recorded_at DESC,
     id DESC
 LIMIT sqlc.arg(limit_count)
@@ -76,7 +82,7 @@ WITH distinct_meals AS (
         id
     FROM meals
     WHERE deleted_at IS NULL
-      AND ($1::text = '' OR dish_name ILIKE '%' || $1 || '%')
+      AND (sqlc.arg(query_text)::text = '' OR unaccent(lower(dish_name)) LIKE '%' || unaccent(lower(sqlc.arg(query_text)::text)) || '%')
     ORDER BY lower(dish_name), COALESCE(image_url, ''), recorded_at DESC, id DESC
 )
 SELECT COUNT(*) FROM distinct_meals;

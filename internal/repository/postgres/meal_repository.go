@@ -47,10 +47,11 @@ func (r MealRepository) Create(ctx context.Context, meal domain.Meal) (domain.Me
 	return mapMealRow(row), nil
 }
 
-func (r MealRepository) ListByDay(ctx context.Context, day time.Time) ([]domain.Meal, error) {
+func (r MealRepository) ListByDay(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
 	rows, err := r.queries.ListMealsByDay(ctx, reposqlc.ListMealsByDayParams{
-		DayStart: pgtype.Timestamptz{Time: startOfDayUTC(day), Valid: true},
-		DayEnd:   pgtype.Timestamptz{Time: startOfDayUTC(day).Add(24 * time.Hour), Valid: true},
+		DayStart: pgtype.Timestamptz{Time: startOfDayUTC(filter.Day), Valid: true},
+		DayEnd:   pgtype.Timestamptz{Time: startOfDayUTC(filter.Day).Add(24 * time.Hour), Valid: true},
+		SortType: filter.Sort,
 	})
 	if err != nil {
 		return nil, err
@@ -72,7 +73,7 @@ func (r MealRepository) ListRecentDistinct(ctx context.Context, filter domain.Re
 
 	offset := (filter.Page - 1) * filter.PageSize
 	rows, err := r.queries.ListRecentDistinctMeals(ctx, reposqlc.ListRecentDistinctMealsParams{
-		Column1:     filter.Query,
+		QueryText:   filter.Query,
 		SortType:    filter.Sort,
 		LimitCount:  filter.PageSize,
 		OffsetCount: offset,

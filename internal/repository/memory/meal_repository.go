@@ -36,7 +36,7 @@ func (r *MealRepository) Create(ctx context.Context, meal domain.Meal) (domain.M
 	return meal, nil
 }
 
-func (r *MealRepository) ListByDay(ctx context.Context, day time.Time) ([]domain.Meal, error) {
+func (r *MealRepository) ListByDay(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
 	_ = ctx
 
 	r.mu.RLock()
@@ -47,10 +47,12 @@ func (r *MealRepository) ListByDay(ctx context.Context, day time.Time) ([]domain
 		if meal.DeletedAt != nil {
 			continue
 		}
-		if sameDayUTC(meal.RecordedAt, day) {
+		if sameDayUTC(meal.RecordedAt, filter.Day) {
 			result = append(result, meal)
 		}
 	}
+
+	sortRecentMeals(result, filter.Sort)
 
 	return result, nil
 }

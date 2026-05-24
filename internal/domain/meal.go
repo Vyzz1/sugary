@@ -63,9 +63,14 @@ type RecentMealsFilter struct {
 	PageSize int32
 }
 
+type MealsByDayFilter struct {
+	Day  time.Time
+	Sort string
+}
+
 type MealRepository interface {
 	Create(ctx context.Context, meal Meal) (Meal, error)
-	ListByDay(ctx context.Context, day time.Time) ([]Meal, error)
+	ListByDay(ctx context.Context, filter MealsByDayFilter) ([]Meal, error)
 	ListRecentDistinct(ctx context.Context, filter RecentMealsFilter) ([]Meal, int64, error)
 	GetByID(ctx context.Context, mealID int64) (Meal, error)
 	UpdateMeta(ctx context.Context, mealID int64, mealType string, recordedAt time.Time) (Meal, error)

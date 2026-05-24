@@ -168,6 +168,7 @@ Login success response example:
 `GET /api/meals`:
 - returns all meals for a given day.
 - optional `date` query in `YYYY-MM-DD`; if omitted, backend uses today.
+- optional `sort` or `sortby`: `created_desc` (default), `created_asc`, `name_asc`, `name_desc`.
 
 `POST /api/upload`:
 - accepts `multipart/form-data`

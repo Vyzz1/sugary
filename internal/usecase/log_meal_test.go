@@ -11,7 +11,7 @@ import (
 
 type stubMealRepository struct {
 	createFn             func(ctx context.Context, meal domain.Meal) (domain.Meal, error)
-	listByDayFn          func(ctx context.Context, day time.Time) ([]domain.Meal, error)
+	listByDayFn          func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error)
 	listRecentDistinctFn func(ctx context.Context, filter domain.RecentMealsFilter) ([]domain.Meal, int64, error)
 	getByIDFn            func(ctx context.Context, mealID int64) (domain.Meal, error)
 	updateMetaFn         func(ctx context.Context, mealID int64, mealType string, recordedAt time.Time) (domain.Meal, error)
@@ -24,8 +24,8 @@ func (s stubMealRepository) Create(ctx context.Context, meal domain.Meal) (domai
 	return s.createFn(ctx, meal)
 }
 
-func (s stubMealRepository) ListByDay(ctx context.Context, day time.Time) ([]domain.Meal, error) {
-	return s.listByDayFn(ctx, day)
+func (s stubMealRepository) ListByDay(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+	return s.listByDayFn(ctx, filter)
 }
 
 func (s stubMealRepository) ListRecentDistinct(ctx context.Context, filter domain.RecentMealsFilter) ([]domain.Meal, int64, error) {
@@ -105,7 +105,7 @@ func TestLogMealExecute(t *testing.T) {
 				meal.ID = 1
 				return meal, nil
 			},
-			listByDayFn: func(ctx context.Context, day time.Time) ([]domain.Meal, error) {
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return nil, nil
 			},
 		},
@@ -142,7 +142,7 @@ func TestLogMealExecuteKeepsProvidedMealType(t *testing.T) {
 			createFn: func(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
 				return meal, nil
 			},
-			listByDayFn: func(ctx context.Context, day time.Time) ([]domain.Meal, error) {
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return nil, nil
 			},
 		},
@@ -249,7 +249,7 @@ func TestLogMealExecuteReturnsValidationError(t *testing.T) {
 			createFn: func(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
 				return domain.Meal{}, nil
 			},
-			listByDayFn: func(ctx context.Context, day time.Time) ([]domain.Meal, error) {
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return nil, nil
 			},
 		},

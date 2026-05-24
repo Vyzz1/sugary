@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
 CREATE TABLE meals (
     id BIGSERIAL PRIMARY KEY,
     dish_name TEXT NOT NULL,

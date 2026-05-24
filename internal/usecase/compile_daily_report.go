@@ -34,7 +34,10 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 
 	day = startOfDayUTC(day)
 
-	meals, err := uc.mealRepository.ListByDay(ctx, day)
+	meals, err := uc.mealRepository.ListByDay(ctx, domain.MealsByDayFilter{
+		Day:  day,
+		Sort: defaultRecentMealsSort,
+	})
 	if err != nil {
 		return domain.DailyReport{}, err
 	}

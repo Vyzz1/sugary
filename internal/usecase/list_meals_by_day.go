@@ -15,16 +15,18 @@ func NewListMealsByDay(mealRepository domain.MealRepository) ListMealsByDay {
 	return ListMealsByDay{mealRepository: mealRepository}
 }
 
-func (uc ListMealsByDay) Execute(ctx context.Context, day time.Time) ([]domain.Meal, time.Time, error) {
-	if day.IsZero() {
-		day = time.Now().UTC()
+func (uc ListMealsByDay) Execute(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, domain.MealsByDayFilter, error) {
+	if filter.Day.IsZero() {
+		filter.Day = time.Now().UTC()
 	}
 
-	normalizedDay := startOfDayUTC(day)
-	meals, err := uc.mealRepository.ListByDay(ctx, normalizedDay)
+	filter.Day = startOfDayUTC(filter.Day)
+	filter.Sort = normalizeRecentMealsSort(filter.Sort)
+
+	meals, err := uc.mealRepository.ListByDay(ctx, filter)
 	if err != nil {
-		return nil, time.Time{}, err
+		return nil, domain.MealsByDayFilter{}, err
 	}
 
-	return meals, normalizedDay, nil
+	return meals, filter, nil
 }

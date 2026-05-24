@@ -17,14 +17,14 @@ WITH distinct_meals AS (
         id
     FROM meals
     WHERE deleted_at IS NULL
-      AND ($1::text = '' OR dish_name ILIKE '%' || $1 || '%')
+      AND ($1::text = '' OR unaccent(lower(dish_name)) LIKE '%' || unaccent(lower($1::text)) || '%')
     ORDER BY lower(dish_name), COALESCE(image_url, ''), recorded_at DESC, id DESC
 )
 SELECT COUNT(*) FROM distinct_meals
 `
 
-func (q *Queries) CountRecentDistinctMeals(ctx context.Context, dollar_1 string) (int64, error) {
-	row := q.db.QueryRow(ctx, countRecentDistinctMeals, dollar_1)
+func (q *Queries) CountRecentDistinctMeals(ctx context.Context, queryText string) (int64, error) {
+	row := q.db.QueryRow(ctx, countRecentDistinctMeals, queryText)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -146,16 +146,23 @@ FROM meals
 WHERE recorded_at >= $1
   AND recorded_at < $2
   AND deleted_at IS NULL
-ORDER BY recorded_at ASC
+ORDER BY
+    CASE WHEN $3::text = 'created_asc' THEN recorded_at END ASC,
+    CASE WHEN $3::text = 'created_desc' THEN recorded_at END DESC,
+    CASE WHEN $3::text = 'name_asc' THEN unaccent(lower(dish_name)) END ASC,
+    CASE WHEN $3::text = 'name_desc' THEN unaccent(lower(dish_name)) END DESC,
+    recorded_at DESC,
+    id DESC
 `
 
 type ListMealsByDayParams struct {
 	DayStart pgtype.Timestamptz `json:"day_start"`
 	DayEnd   pgtype.Timestamptz `json:"day_end"`
+	SortType string             `json:"sort_type"`
 }
 
 func (q *Queries) ListMealsByDay(ctx context.Context, arg ListMealsByDayParams) ([]Meal, error) {
-	rows, err := q.db.Query(ctx, listMealsByDay, arg.DayStart, arg.DayEnd)
+	rows, err := q.db.Query(ctx, listMealsByDay, arg.DayStart, arg.DayEnd, arg.SortType)
 	if err != nil {
 		return nil, err
 	}
@@ -208,27 +215,27 @@ WITH distinct_meals AS (
         deleted_at
     FROM meals
     WHERE deleted_at IS NULL
-      AND ($1::text = '' OR dish_name ILIKE '%' || $1 || '%')
+      AND ($4::text = '' OR unaccent(lower(dish_name)) LIKE '%' || unaccent(lower($4::text)) || '%')
     ORDER BY lower(dish_name), COALESCE(image_url, ''), recorded_at DESC, id DESC
 )
 SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
 FROM distinct_meals
 ORDER BY
-    CASE WHEN $2::text = 'created_asc' THEN recorded_at END ASC,
-    CASE WHEN $2::text = 'created_desc' THEN recorded_at END DESC,
-    CASE WHEN $2::text = 'name_asc' THEN lower(dish_name) END ASC,
-    CASE WHEN $2::text = 'name_desc' THEN lower(dish_name) END DESC,
+    CASE WHEN $1::text = 'created_asc' THEN recorded_at END ASC,
+    CASE WHEN $1::text = 'created_desc' THEN recorded_at END DESC,
+    CASE WHEN $1::text = 'name_asc' THEN unaccent(lower(dish_name)) END ASC,
+    CASE WHEN $1::text = 'name_desc' THEN unaccent(lower(dish_name)) END DESC,
     recorded_at DESC,
     id DESC
-LIMIT $4
-OFFSET $3
+LIMIT $3
+OFFSET $2
 `
 
 type ListRecentDistinctMealsParams struct {
-	Column1     string `json:"column_1"`
 	SortType    string `json:"sort_type"`
 	OffsetCount int32  `json:"offset_count"`
 	LimitCount  int32  `json:"limit_count"`
+	QueryText   string `json:"query_text"`
 }
 
 type ListRecentDistinctMealsRow struct {
@@ -250,10 +257,10 @@ type ListRecentDistinctMealsRow struct {
 
 func (q *Queries) ListRecentDistinctMeals(ctx context.Context, arg ListRecentDistinctMealsParams) ([]ListRecentDistinctMealsRow, error) {
 	rows, err := q.db.Query(ctx, listRecentDistinctMeals,
-		arg.Column1,
 		arg.SortType,
 		arg.OffsetCount,
 		arg.LimitCount,
+		arg.QueryText,
 	)
 	if err != nil {
 		return nil, err

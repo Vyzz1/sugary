@@ -166,6 +166,8 @@ Return STRICT JSON only with this shape:
 
 Requirements:
 - summary should be 2 to 4 concise sentences in English
+- recommendations and pattern_signals must also be written in English
+- do not translate dish_name values in top_contributors; keep the original meal names from the input
 - mention the overall sugar picture for the day
 - call out the biggest likely contributor if obvious
 - mention a practical suggestion for the next day
