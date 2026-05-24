@@ -12,7 +12,7 @@ import (
 )
 
 const getDailyReportByDate = `-- name: GetDailyReportByDate :one
-SELECT report_date, meal_count, total_sugar_grams, average_sugar_grams, highest_risk_level, summary
+SELECT report_date, meal_count, total_sugar_grams, average_sugar_grams, highest_risk_level, summary, ai_insights
 FROM daily_reports
 WHERE report_date = $1
 `
@@ -27,6 +27,7 @@ func (q *Queries) GetDailyReportByDate(ctx context.Context, reportDate pgtype.Da
 		&i.AverageSugarGrams,
 		&i.HighestRiskLevel,
 		&i.Summary,
+		&i.AiInsights,
 	)
 	return i, err
 }
@@ -38,21 +39,24 @@ INSERT INTO daily_reports (
     total_sugar_grams,
     average_sugar_grams,
     highest_risk_level,
-    summary
+    summary,
+    ai_insights
 ) VALUES (
     $1,
     $2,
     $3,
     $4,
     $5,
-    $6
+    $6,
+    $7
 )
 ON CONFLICT (report_date) DO UPDATE SET
     meal_count = EXCLUDED.meal_count,
     total_sugar_grams = EXCLUDED.total_sugar_grams,
     average_sugar_grams = EXCLUDED.average_sugar_grams,
     highest_risk_level = EXCLUDED.highest_risk_level,
-    summary = EXCLUDED.summary
+    summary = EXCLUDED.summary,
+    ai_insights = EXCLUDED.ai_insights
 `
 
 type UpsertDailyReportParams struct {
@@ -62,6 +66,7 @@ type UpsertDailyReportParams struct {
 	AverageSugarGrams float64     `json:"average_sugar_grams"`
 	HighestRiskLevel  string      `json:"highest_risk_level"`
 	Summary           string      `json:"summary"`
+	AiInsights        []byte      `json:"ai_insights"`
 }
 
 func (q *Queries) UpsertDailyReport(ctx context.Context, arg UpsertDailyReportParams) error {
@@ -72,6 +77,7 @@ func (q *Queries) UpsertDailyReport(ctx context.Context, arg UpsertDailyReportPa
 		arg.AverageSugarGrams,
 		arg.HighestRiskLevel,
 		arg.Summary,
+		arg.AiInsights,
 	)
 	return err
 }

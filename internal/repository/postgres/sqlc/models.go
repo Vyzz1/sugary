@@ -15,6 +15,7 @@ type DailyReport struct {
 	AverageSugarGrams float64     `json:"average_sugar_grams"`
 	HighestRiskLevel  string      `json:"highest_risk_level"`
 	Summary           string      `json:"summary"`
+	AiInsights        []byte      `json:"ai_insights"`
 }
 
 type Meal struct {

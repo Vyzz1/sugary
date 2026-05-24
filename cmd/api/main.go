@@ -36,6 +36,7 @@ func main() {
 	mealRepository := postgres.NewMealRepository(store.Queries)
 	dailyReportRepository := postgres.NewDailyReportRepository(store.Queries)
 	nutritionAnalyzer := ai.NewGeminiNutritionAnalyzer(cfg.GeminiAPIKey, cfg.GeminiModel)
+	dailyReportInterpreter := ai.NewGeminiDailyReportInterpreter(cfg.GeminiAPIKey, cfg.GeminiModel)
 	fileUploader := uploadproxy.NewHTTPUploader(cfg.Upload)
 
 	logMeal := usecase.NewLogMeal(mealRepository, nutritionAnalyzer)
@@ -45,7 +46,7 @@ func main() {
 	editMealAnalysis := usecase.NewEditMealAnalysis(mealRepository)
 	editMeal := usecase.NewEditMeal(mealRepository, nutritionAnalyzer)
 	deleteMeal := usecase.NewDeleteMeal(mealRepository)
-	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository)
+	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository, dailyReportInterpreter)
 	getDailyReport := usecase.NewGetDailyReport(dailyReportRepository)
 
 	reportHandler := handler.NewReportHandler(compileDailyReport, getDailyReport)
@@ -54,7 +55,7 @@ func main() {
 	mealHandler := handler.NewMealHandler(logMeal, listMealsByDay, listRecentMeals, editMealAnalysis, editMeal, deleteMeal)
 
 	router := httpdelivery.NewRouter(
-		cfg.Auth,
+		cfg,
 		handler.NewHealthHandler(),
 		authHandler,
 		uploadHandler,

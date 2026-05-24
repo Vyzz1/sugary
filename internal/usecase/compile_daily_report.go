@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"sugary/internal/domain"
@@ -11,15 +12,18 @@ import (
 type CompileDailyReport struct {
 	mealRepository        domain.MealRepository
 	dailyReportRepository domain.DailyReportRepository
+	interpreter           domain.DailyReportInterpreter
 }
 
 func NewCompileDailyReport(
 	mealRepository domain.MealRepository,
 	dailyReportRepository domain.DailyReportRepository,
+	interpreter domain.DailyReportInterpreter,
 ) CompileDailyReport {
 	return CompileDailyReport{
 		mealRepository:        mealRepository,
 		dailyReportRepository: dailyReportRepository,
+		interpreter:           interpreter,
 	}
 }
 
@@ -41,7 +45,8 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 
 	if len(meals) == 0 {
 		report.HighestRiskLevel = "unknown"
-		report.Summary = "No meals were recorded for the selected day."
+		report.Summary = fallbackDailyReportSummary(report, 0)
+		report.AIInsights = fallbackDailyReportAIInsights(report.Summary)
 		if err := uc.dailyReportRepository.Save(ctx, report); err != nil {
 			return domain.DailyReport{}, err
 		}
@@ -67,20 +72,23 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 
 	report.TotalSugarGrams = totalSugar
 	report.HighestRiskLevel = highestRisk
-	if analyzedMealCount == 0 {
-		report.Summary = fmt.Sprintf(
-			"%d meals logged, but nutrition analysis is not available yet.",
-			report.MealCount,
-		)
-	} else {
+	if analyzedMealCount > 0 {
 		report.AverageSugarGrams = totalSugar / float64(analyzedMealCount)
-		report.Summary = fmt.Sprintf(
-			"%d meals logged (%d analyzed). Estimated sugar intake %.1fg. Highest meal risk: %s.",
-			report.MealCount,
-			analyzedMealCount,
-			report.TotalSugarGrams,
-			report.HighestRiskLevel,
-		)
+	}
+	report.Summary = fallbackDailyReportSummary(report, analyzedMealCount)
+	report.AIInsights = fallbackDailyReportAIInsights(report.Summary)
+
+	if analyzedMealCount > 0 && uc.interpreter != nil {
+		insights, err := uc.interpreter.GenerateInsights(ctx, domain.GenerateDailyReportSummaryInput{
+			Report:            report,
+			AnalyzedMealCount: analyzedMealCount,
+			Meals:             meals,
+		})
+		if err == nil && strings.TrimSpace(insights.Summary) != "" {
+			insights.Summary = strings.TrimSpace(insights.Summary)
+			report.Summary = insights.Summary
+			report.AIInsights = insights
+		}
 	}
 
 	if err := uc.dailyReportRepository.Save(ctx, report); err != nil {
@@ -88,6 +96,34 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 	}
 
 	return report, nil
+}
+
+func fallbackDailyReportSummary(report domain.DailyReport, analyzedMealCount int) string {
+	if report.MealCount == 0 {
+		return "No meals were recorded for the selected day."
+	}
+	if analyzedMealCount == 0 {
+		return fmt.Sprintf(
+			"%d meals logged, but nutrition analysis is not available yet.",
+			report.MealCount,
+		)
+	}
+	return fmt.Sprintf(
+		"%d meals logged (%d analyzed). Estimated sugar intake %.1fg. Highest meal risk: %s.",
+		report.MealCount,
+		analyzedMealCount,
+		report.TotalSugarGrams,
+		report.HighestRiskLevel,
+	)
+}
+
+func fallbackDailyReportAIInsights(summary string) domain.DailyReportAIInsights {
+	return domain.DailyReportAIInsights{
+		Summary:         summary,
+		TopContributors: []domain.DailyReportTopContributor{},
+		Recommendations: []string{},
+		PatternSignals:  []string{},
+	}
 }
 
 func startOfDayUTC(day time.Time) time.Time {

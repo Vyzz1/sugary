@@ -32,6 +32,7 @@ APP_ENV=development
 LOG_LEVEL=info
 APP_PORT=8080
 PORT=10000
+CORS_ALLOW_ORIGINS=*
 GEMINI_API_KEY=your-gemini-key
 UPLOAD_API_URL=https://your-upload-api.example.com/upload
 UPLOAD_INTERNAL_TOKEN=your-internal-upload-token
@@ -236,6 +237,7 @@ Errors use:
 - `UPLOAD_API_URL`: upstream upload endpoint used by the upload proxy
 - `UPLOAD_INTERNAL_TOKEN`: value sent as `x-internal-upload-token` to the upstream upload API
 - `UPLOAD_FOLDER`: forwarded form field for the upstream upload API, defaults to `sugary`
+- `CORS_ALLOW_ORIGINS`: comma-separated allowed origins for browser requests, defaults to `*`
 - `POSTGRES_*`: connection settings for the primary database
 - `REDIS_*`: connection settings for cache and job-related state
 - `PORT`: runtime port used by platforms like Render

@@ -9,7 +9,7 @@ import (
 )
 
 func NewRouter(
-	auth config.AuthConfig,
+	cfg config.Config,
 	healthHandler handler.HealthHandler,
 	authHandler handler.AuthHandler,
 	uploadHandler handler.UploadHandler,
@@ -19,6 +19,7 @@ func NewRouter(
 ) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(middleware.CORS(cfg.CORSAllowOrigins))
 	router.Use(middleware.RequestLogger())
 	router.GET("/health", healthHandler.Check)
 	api := router.Group("/api")
@@ -29,7 +30,7 @@ func NewRouter(
 	}
 
 	protected := router.Group("/api")
-	protected.Use(middleware.JWT(auth.JWTSecret))
+	protected.Use(middleware.JWT(cfg.Auth.JWTSecret))
 	protected.POST("/upload", uploadHandler.Upload)
 	protected.POST("/meals", mealHandler.Create)
 	protected.GET("/meals", mealHandler.ListByDay)

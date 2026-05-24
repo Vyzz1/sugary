@@ -21,5 +21,6 @@ CREATE TABLE daily_reports (
     total_sugar_grams DOUBLE PRECISION NOT NULL,
     average_sugar_grams DOUBLE PRECISION NOT NULL,
     highest_risk_level TEXT NOT NULL,
-    summary TEXT NOT NULL
+    summary TEXT NOT NULL,
+    ai_insights JSONB NOT NULL DEFAULT '{}'::jsonb
 );

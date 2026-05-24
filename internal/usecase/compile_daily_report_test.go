@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -13,12 +14,20 @@ type stubDailyReportRepository struct {
 	getByDayFn func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error)
 }
 
+type stubDailyReportInterpreter struct {
+	generateInsightsFn func(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error)
+}
+
 func (s stubDailyReportRepository) Save(ctx context.Context, report domain.DailyReport) error {
 	return s.saveFn(ctx, report)
 }
 
 func (s stubDailyReportRepository) GetByDay(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
 	return s.getByDayFn(ctx, day)
+}
+
+func (s stubDailyReportInterpreter) GenerateInsights(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error) {
+	return s.generateInsightsFn(ctx, input)
 }
 
 func TestCompileDailyReportExecute(t *testing.T) {
@@ -67,6 +76,14 @@ func TestCompileDailyReportExecute(t *testing.T) {
 				return domain.DailyReport{}, false, nil
 			},
 		},
+		stubDailyReportInterpreter{
+			generateInsightsFn: func(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error) {
+				return domain.DailyReportAIInsights{
+					Summary:         "AI summary",
+					Recommendations: []string{"Use less sweet drinks"},
+				}, nil
+			},
+		},
 	)
 
 	report, err := uc.Execute(context.Background(), day)
@@ -78,6 +95,12 @@ func TestCompileDailyReportExecute(t *testing.T) {
 	}
 	if report.AverageSugarGrams != 20.5 {
 		t.Fatalf("expected average sugar 20.5, got %v", report.AverageSugarGrams)
+	}
+	if report.Summary != "AI summary" {
+		t.Fatalf("expected AI summary, got %q", report.Summary)
+	}
+	if report.AIInsights.Summary != "AI summary" {
+		t.Fatalf("expected AI insights summary, got %q", report.AIInsights.Summary)
 	}
 }
 
@@ -113,6 +136,11 @@ func TestCompileDailyReportExecuteSkipsUnanalyzedMealsInAverage(t *testing.T) {
 				return domain.DailyReport{}, false, nil
 			},
 		},
+		stubDailyReportInterpreter{
+			generateInsightsFn: func(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error) {
+				return domain.DailyReportAIInsights{}, errors.New("ai unavailable")
+			},
+		},
 	)
 
 	report, err := uc.Execute(context.Background(), day)
@@ -130,6 +158,12 @@ func TestCompileDailyReportExecuteSkipsUnanalyzedMealsInAverage(t *testing.T) {
 	}
 	if report.HighestRiskLevel != "high" {
 		t.Fatalf("expected highest risk high, got %q", report.HighestRiskLevel)
+	}
+	if report.Summary == "" {
+		t.Fatalf("expected fallback summary")
+	}
+	if report.AIInsights.Summary == "" {
+		t.Fatalf("expected fallback ai insights summary")
 	}
 }
 
@@ -156,6 +190,7 @@ func TestCompileDailyReportExecuteNoAnalyzedMeals(t *testing.T) {
 				return domain.DailyReport{}, false, nil
 			},
 		},
+		nil,
 	)
 
 	report, err := uc.Execute(context.Background(), day)
@@ -170,5 +205,8 @@ func TestCompileDailyReportExecuteNoAnalyzedMeals(t *testing.T) {
 	}
 	if report.HighestRiskLevel != "unknown" {
 		t.Fatalf("expected highest risk unknown, got %q", report.HighestRiskLevel)
+	}
+	if report.AIInsights.Summary == "" {
+		t.Fatalf("expected fallback ai insights summary")
 	}
 }

@@ -11,15 +11,16 @@ import (
 const defaultPort = "8080"
 
 type Config struct {
-	AppEnv       string
-	Port         string
-	LogLevel     string
-	GeminiAPIKey string
-	GeminiModel  string
-	Auth         AuthConfig
-	Upload       UploadConfig
-	Postgres     PostgresConfig
-	Redis        RedisConfig
+	AppEnv           string
+	Port             string
+	LogLevel         string
+	CORSAllowOrigins string
+	GeminiAPIKey     string
+	GeminiModel      string
+	Auth             AuthConfig
+	Upload           UploadConfig
+	Postgres         PostgresConfig
+	Redis            RedisConfig
 }
 
 type AuthConfig struct {
@@ -57,11 +58,12 @@ func Load() Config {
 	}
 
 	return Config{
-		AppEnv:       getEnv("APP_ENV", "development"),
-		Port:         getEnv("PORT", getEnv("APP_PORT", defaultPort)),
-		LogLevel:     getEnv("LOG_LEVEL", "info"),
-		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
-		GeminiModel:  getEnv("GEMINI_MODEL", "gemini-2.5-flash"),
+		AppEnv:           getEnv("APP_ENV", "development"),
+		Port:             getEnv("PORT", getEnv("APP_PORT", defaultPort)),
+		LogLevel:         getEnv("LOG_LEVEL", "info"),
+		CORSAllowOrigins: getEnv("CORS_ALLOW_ORIGINS", "*"),
+		GeminiAPIKey:     os.Getenv("GEMINI_API_KEY"),
+		GeminiModel:      getEnv("GEMINI_MODEL", "gemini-2.5-flash"),
 		Auth: AuthConfig{
 			LoginUser:     os.Getenv("LOGIN_USER"),
 			LoginPassword: os.Getenv("LOGIN_PASSWORD"),
