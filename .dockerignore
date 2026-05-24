@@ -1,0 +1,23 @@
+vendor
+.git
+.gitignore
+.DS_Store
+.env
+*.env
+db/
+*.md
+*.sql
+*.tmp
+# Ignore editor and OS files
+.vscode/
+.idea/
+node_modules/
+
+# Build outputs
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+.gocache/
+.gomodcache/
