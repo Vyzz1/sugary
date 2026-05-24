@@ -33,6 +33,9 @@ LOG_LEVEL=info
 APP_PORT=8080
 PORT=10000
 GEMINI_API_KEY=your-gemini-key
+UPLOAD_API_URL=https://your-upload-api.example.com/upload
+UPLOAD_INTERNAL_TOKEN=your-internal-upload-token
+UPLOAD_FOLDER=sugary
 LOGIN_USER=admin
 LOGIN_PASSWORD=change-me
 JWT_SECRET=change-this-secret
@@ -73,10 +76,39 @@ curl -X POST http://localhost:8080/meals \
   -H "Authorization: Bearer <token>" \
   -d "{\"dish_name\":\"milk tea\",\"meal_type\":\"lunch\",\"recorded_at\":\"2026-05-21T12:00:00Z\"}"
 
+curl -X POST http://localhost:8080/meals \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d "{\"source_meal_id\":1,\"meal_type\":\"dinner\",\"recorded_at\":\"2026-05-22T19:00:00Z\"}"
+
+curl -X POST http://localhost:8080/api/upload \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@./meal.jpg" \
+  -F "file_name=meal-cover"
+
+curl "http://localhost:8080/api/meals?date=2026-05-22" \
+  -H "Authorization: Bearer <token>"
+
 curl -X POST "http://localhost:8080/jobs/daily-report?date=2026-05-21" \
   -H "Authorization: Bearer <token>"
 
 curl "http://localhost:8080/reports/daily?date=2026-05-21" \
+  -H "Authorization: Bearer <token>"
+
+curl "http://localhost:8080/api/meals/recent?q=tea&sort=created_desc&page=1&page_size=20" \
+  -H "Authorization: Bearer <token>"
+
+curl -X PATCH http://localhost:8080/api/meals/1 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d "{\"meal_type\":\"lunch\",\"recorded_at\":\"2026-05-21T12:00:00Z\"}"
+
+curl -X PATCH http://localhost:8080/api/meals/1/analysis \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d "{\"estimated_sugar_grams\":24,\"estimated_carbs_grams\":48,\"estimated_protein_grams\":12,\"estimated_calories\":460}"
+
+curl -X DELETE http://localhost:8080/api/meals/1 \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -128,6 +160,38 @@ Login success response example:
 - `recorded_at` must be RFC3339 if provided.
 - `image_url` is optional; if provided it must be a non-empty `http/https` URL.
 - backend calls Gemini AI during meal creation; `GEMINI_API_KEY` must be configured, otherwise `POST /meals` fails.
+- created meals include `is_user_edited=false` by default.
+- alternatively send `source_meal_id` to clone an existing meal into a new independent meal without calling Gemini.
+- when `source_meal_id` is provided, `dish_name` and `image_url` must be omitted; `meal_type` and `recorded_at` may override the cloned values.
+
+`GET /api/meals`:
+- returns all meals for a given day.
+- optional `date` query in `YYYY-MM-DD`; if omitted, backend uses today.
+
+`POST /api/upload`:
+- accepts `multipart/form-data`
+- required field: `file`
+- optional field: `file_name`
+- forwards to the configured upload API with `folder` from env and `x-internal-upload-token` from env
+
+`PATCH /api/meals/:id`:
+- if only `meal_type` or `recorded_at` changes: update directly, no AI re-analysis.
+- if `dish_name` or `image_url` changes: backend re-runs AI analysis with new input.
+
+`GET /api/meals/recent`:
+- returns recent distinct meals for the "choose again" UI.
+- uses `SELECT DISTINCT ON (lower(dish_name), COALESCE(image_url, ''))` and keeps the newest meal per dish/image pair.
+- optional `q` filters by `dish_name`.
+- optional `sort`: `created_desc` (default), `created_asc`, `name_asc`, `name_desc`.
+- pagination uses `page` and `page_size`; defaults to `1` and `20`, and `page_size` is capped at `100`.
+
+`PATCH /api/meals/:id/analysis`:
+- only edits estimated fields: `estimated_sugar_grams`, `estimated_carbs_grams`, `estimated_protein_grams`, `estimated_calories`.
+- does not allow editing `risk_level` and `notes`.
+- marks `is_user_edited=true`.
+
+`DELETE /api/meals/:id`:
+- soft delete via `deleted_at` (record is hidden from app reads and daily report compilation).
 
 Validation errors return structured codes, for example:
 
@@ -169,6 +233,9 @@ Errors use:
 
 - `GEMINI_API_KEY`: API key for the Gemini integration
 - `GEMINI_MODEL`: default model name, currently `gemini-2.5-flash`
+- `UPLOAD_API_URL`: upstream upload endpoint used by the upload proxy
+- `UPLOAD_INTERNAL_TOKEN`: value sent as `x-internal-upload-token` to the upstream upload API
+- `UPLOAD_FOLDER`: forwarded form field for the upstream upload API, defaults to `sugary`
 - `POSTGRES_*`: connection settings for the primary database
 - `REDIS_*`: connection settings for cache and job-related state
 - `PORT`: runtime port used by platforms like Render

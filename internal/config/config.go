@@ -17,6 +17,7 @@ type Config struct {
 	GeminiAPIKey string
 	GeminiModel  string
 	Auth         AuthConfig
+	Upload       UploadConfig
 	Postgres     PostgresConfig
 	Redis        RedisConfig
 }
@@ -26,6 +27,12 @@ type AuthConfig struct {
 	LoginPassword string
 	JWTSecret     string
 	JWTExpiresIn  string
+}
+
+type UploadConfig struct {
+	APIURL        string
+	InternalToken string
+	Folder        string
 }
 
 type PostgresConfig struct {
@@ -60,6 +67,11 @@ func Load() Config {
 			LoginPassword: os.Getenv("LOGIN_PASSWORD"),
 			JWTSecret:     os.Getenv("JWT_SECRET"),
 			JWTExpiresIn:  getEnv("JWT_EXPIRES_IN", "24h"),
+		},
+		Upload: UploadConfig{
+			APIURL:        os.Getenv("UPLOAD_API_URL"),
+			InternalToken: os.Getenv("UPLOAD_INTERNAL_TOKEN"),
+			Folder:        getEnv("UPLOAD_FOLDER", "sugary"),
 		},
 		Postgres: PostgresConfig{
 			Host:     getEnv("POSTGRES_HOST", "localhost"),

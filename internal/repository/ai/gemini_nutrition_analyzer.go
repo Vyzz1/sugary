@@ -133,6 +133,8 @@ Estimate sugar and calories for this meal:
 Return STRICT JSON only with this shape:
 {
   "estimated_sugar_grams": number,
+  "estimated_carbs_grams": number,
+  "estimated_protein_grams": number,
   "estimated_calories": integer,
   "risk_level": "low" | "medium" | "high",
   "notes": ["short note 1", "short note 2"]
@@ -146,10 +148,12 @@ Rules:
 
 func parseNutritionJSON(raw string) (domain.Nutrition, error) {
 	type nutritionPayload struct {
-		EstimatedSugarGrams float64  `json:"estimated_sugar_grams"`
-		EstimatedCalories   int      `json:"estimated_calories"`
-		RiskLevel           string   `json:"risk_level"`
-		Notes               []string `json:"notes"`
+		EstimatedSugarGrams   float64  `json:"estimated_sugar_grams"`
+		EstimatedCarbsGrams   float64  `json:"estimated_carbs_grams"`
+		EstimatedProteinGrams float64  `json:"estimated_protein_grams"`
+		EstimatedCalories     int      `json:"estimated_calories"`
+		RiskLevel             string   `json:"risk_level"`
+		Notes                 []string `json:"notes"`
 	}
 
 	trimmed := strings.TrimSpace(raw)
@@ -171,6 +175,12 @@ func parseNutritionJSON(raw string) (domain.Nutrition, error) {
 	if payload.EstimatedSugarGrams < 0 {
 		return domain.Nutrition{}, fmt.Errorf("invalid estimated_sugar_grams from ai")
 	}
+	if payload.EstimatedCarbsGrams < 0 {
+		return domain.Nutrition{}, fmt.Errorf("invalid estimated_carbs_grams from ai")
+	}
+	if payload.EstimatedProteinGrams < 0 {
+		return domain.Nutrition{}, fmt.Errorf("invalid estimated_protein_grams from ai")
+	}
 	if payload.EstimatedCalories < 0 {
 		return domain.Nutrition{}, fmt.Errorf("invalid estimated_calories from ai")
 	}
@@ -184,10 +194,12 @@ func parseNutritionJSON(raw string) (domain.Nutrition, error) {
 	}
 
 	return domain.Nutrition{
-		EstimatedSugarGrams: payload.EstimatedSugarGrams,
-		EstimatedCalories:   payload.EstimatedCalories,
-		RiskLevel:           payload.RiskLevel,
-		Notes:               notes,
+		EstimatedSugarGrams:   payload.EstimatedSugarGrams,
+		EstimatedCarbsGrams:   payload.EstimatedCarbsGrams,
+		EstimatedProteinGrams: payload.EstimatedProteinGrams,
+		EstimatedCalories:     payload.EstimatedCalories,
+		RiskLevel:             payload.RiskLevel,
+		Notes:                 notes,
 	}, nil
 }
 

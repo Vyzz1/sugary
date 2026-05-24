@@ -11,9 +11,16 @@ import (
 )
 
 type Querier interface {
+	CountRecentDistinctMeals(ctx context.Context, dollar_1 string) (int64, error)
 	CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, error)
 	GetDailyReportByDate(ctx context.Context, reportDate pgtype.Date) (DailyReport, error)
+	GetMealByID(ctx context.Context, id int64) (Meal, error)
 	ListMealsByDay(ctx context.Context, arg ListMealsByDayParams) ([]Meal, error)
+	ListRecentDistinctMeals(ctx context.Context, arg ListRecentDistinctMealsParams) ([]ListRecentDistinctMealsRow, error)
+	SoftDeleteMealByID(ctx context.Context, id int64) (int64, error)
+	UpdateMealAnalysisByID(ctx context.Context, arg UpdateMealAnalysisByIDParams) (Meal, error)
+	UpdateMealMetaByID(ctx context.Context, arg UpdateMealMetaByIDParams) (Meal, error)
+	UpdateMealWithAnalysisByID(ctx context.Context, arg UpdateMealWithAnalysisByIDParams) (Meal, error)
 	UpsertDailyReport(ctx context.Context, arg UpsertDailyReportParams) error
 }
 

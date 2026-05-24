@@ -12,6 +12,7 @@ import (
 	"sugary/internal/platform/logging"
 	"sugary/internal/repository/ai"
 	"sugary/internal/repository/postgres"
+	"sugary/internal/repository/uploadproxy"
 	"sugary/internal/usecase"
 )
 
@@ -35,19 +36,28 @@ func main() {
 	mealRepository := postgres.NewMealRepository(store.Queries)
 	dailyReportRepository := postgres.NewDailyReportRepository(store.Queries)
 	nutritionAnalyzer := ai.NewGeminiNutritionAnalyzer(cfg.GeminiAPIKey, cfg.GeminiModel)
+	fileUploader := uploadproxy.NewHTTPUploader(cfg.Upload)
 
 	logMeal := usecase.NewLogMeal(mealRepository, nutritionAnalyzer)
+	uploadFile := usecase.NewUploadFile(fileUploader)
+	listMealsByDay := usecase.NewListMealsByDay(mealRepository)
+	listRecentMeals := usecase.NewListRecentMeals(mealRepository)
+	editMealAnalysis := usecase.NewEditMealAnalysis(mealRepository)
+	editMeal := usecase.NewEditMeal(mealRepository, nutritionAnalyzer)
+	deleteMeal := usecase.NewDeleteMeal(mealRepository)
 	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository)
 	getDailyReport := usecase.NewGetDailyReport(dailyReportRepository)
 
 	reportHandler := handler.NewReportHandler(compileDailyReport, getDailyReport)
 	authHandler := handler.NewAuthHandler(cfg.Auth)
-	mealHandler := handler.NewMealHandler(logMeal)
+	uploadHandler := handler.NewUploadHandler(uploadFile)
+	mealHandler := handler.NewMealHandler(logMeal, listMealsByDay, listRecentMeals, editMealAnalysis, editMeal, deleteMeal)
 
 	router := httpdelivery.NewRouter(
 		cfg.Auth,
 		handler.NewHealthHandler(),
 		authHandler,
+		uploadHandler,
 		mealHandler,
 		reportHandler,
 		handler.NewJobHandler(reportHandler),

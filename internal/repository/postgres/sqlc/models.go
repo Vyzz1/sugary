@@ -18,14 +18,18 @@ type DailyReport struct {
 }
 
 type Meal struct {
-	ID                  int64              `json:"id"`
-	DishName            string             `json:"dish_name"`
-	MealType            string             `json:"meal_type"`
-	ImageUrl            *string            `json:"image_url"`
-	RecordedAt          pgtype.Timestamptz `json:"recorded_at"`
-	AnalysisStatus      string             `json:"analysis_status"`
-	EstimatedSugarGrams float64            `json:"estimated_sugar_grams"`
-	EstimatedCalories   int32              `json:"estimated_calories"`
-	RiskLevel           string             `json:"risk_level"`
-	AnalysisNotes       string             `json:"analysis_notes"`
+	ID                    int64              `json:"id"`
+	DishName              string             `json:"dish_name"`
+	MealType              string             `json:"meal_type"`
+	ImageUrl              *string            `json:"image_url"`
+	RecordedAt            pgtype.Timestamptz `json:"recorded_at"`
+	AnalysisStatus        string             `json:"analysis_status"`
+	EstimatedSugarGrams   float64            `json:"estimated_sugar_grams"`
+	EstimatedCarbsGrams   float64            `json:"estimated_carbs_grams"`
+	EstimatedProteinGrams float64            `json:"estimated_protein_grams"`
+	EstimatedCalories     int32              `json:"estimated_calories"`
+	RiskLevel             string             `json:"risk_level"`
+	AnalysisNotes         string             `json:"analysis_notes"`
+	IsUserEdited          bool               `json:"is_user_edited"`
+	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
 }

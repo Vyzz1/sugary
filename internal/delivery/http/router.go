@@ -12,6 +12,7 @@ func NewRouter(
 	auth config.AuthConfig,
 	healthHandler handler.HealthHandler,
 	authHandler handler.AuthHandler,
+	uploadHandler handler.UploadHandler,
 	mealHandler handler.MealHandler,
 	reportHandler handler.ReportHandler,
 	jobHandler handler.JobHandler,
@@ -29,7 +30,13 @@ func NewRouter(
 
 	protected := router.Group("/api")
 	protected.Use(middleware.JWT(auth.JWTSecret))
+	protected.POST("/upload", uploadHandler.Upload)
 	protected.POST("/meals", mealHandler.Create)
+	protected.GET("/meals", mealHandler.ListByDay)
+	protected.GET("/meals/recent", mealHandler.ListRecent)
+	protected.PATCH("/meals/:id", mealHandler.EditMeal)
+	protected.PATCH("/meals/:id/analysis", mealHandler.EditAnalysis)
+	protected.DELETE("/meals/:id", mealHandler.DeleteMeal)
 	protected.POST("/jobs/daily-report", jobHandler.RunDailyReport)
 	protected.GET("/reports/daily", reportHandler.GetDaily)
 

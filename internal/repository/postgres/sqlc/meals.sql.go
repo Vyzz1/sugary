@@ -11,6 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countRecentDistinctMeals = `-- name: CountRecentDistinctMeals :one
+WITH distinct_meals AS (
+    SELECT DISTINCT ON (lower(dish_name), COALESCE(image_url, ''))
+        id
+    FROM meals
+    WHERE deleted_at IS NULL
+      AND ($1::text = '' OR dish_name ILIKE '%' || $1 || '%')
+    ORDER BY lower(dish_name), COALESCE(image_url, ''), recorded_at DESC, id DESC
+)
+SELECT COUNT(*) FROM distinct_meals
+`
+
+func (q *Queries) CountRecentDistinctMeals(ctx context.Context, dollar_1 string) (int64, error) {
+	row := q.db.QueryRow(ctx, countRecentDistinctMeals, dollar_1)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createMeal = `-- name: CreateMeal :one
 INSERT INTO meals (
     dish_name,
@@ -19,9 +38,12 @@ INSERT INTO meals (
     recorded_at,
     analysis_status,
     estimated_sugar_grams,
+    estimated_carbs_grams,
+    estimated_protein_grams,
     estimated_calories,
     risk_level,
-    analysis_notes
+    analysis_notes,
+    is_user_edited
 ) VALUES (
     $1,
     $2,
@@ -31,21 +53,27 @@ INSERT INTO meals (
     $6,
     $7,
     $8,
-    $9
+    $9,
+    $10,
+    $11,
+    $12
 )
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_calories, risk_level, analysis_notes
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
 `
 
 type CreateMealParams struct {
-	DishName            string             `json:"dish_name"`
-	MealType            string             `json:"meal_type"`
-	ImageUrl            *string            `json:"image_url"`
-	RecordedAt          pgtype.Timestamptz `json:"recorded_at"`
-	AnalysisStatus      string             `json:"analysis_status"`
-	EstimatedSugarGrams float64            `json:"estimated_sugar_grams"`
-	EstimatedCalories   int32              `json:"estimated_calories"`
-	RiskLevel           string             `json:"risk_level"`
-	AnalysisNotes       string             `json:"analysis_notes"`
+	DishName              string             `json:"dish_name"`
+	MealType              string             `json:"meal_type"`
+	ImageUrl              *string            `json:"image_url"`
+	RecordedAt            pgtype.Timestamptz `json:"recorded_at"`
+	AnalysisStatus        string             `json:"analysis_status"`
+	EstimatedSugarGrams   float64            `json:"estimated_sugar_grams"`
+	EstimatedCarbsGrams   float64            `json:"estimated_carbs_grams"`
+	EstimatedProteinGrams float64            `json:"estimated_protein_grams"`
+	EstimatedCalories     int32              `json:"estimated_calories"`
+	RiskLevel             string             `json:"risk_level"`
+	AnalysisNotes         string             `json:"analysis_notes"`
+	IsUserEdited          bool               `json:"is_user_edited"`
 }
 
 func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, error) {
@@ -56,9 +84,12 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 		arg.RecordedAt,
 		arg.AnalysisStatus,
 		arg.EstimatedSugarGrams,
+		arg.EstimatedCarbsGrams,
+		arg.EstimatedProteinGrams,
 		arg.EstimatedCalories,
 		arg.RiskLevel,
 		arg.AnalysisNotes,
+		arg.IsUserEdited,
 	)
 	var i Meal
 	err := row.Scan(
@@ -69,18 +100,52 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 		&i.RecordedAt,
 		&i.AnalysisStatus,
 		&i.EstimatedSugarGrams,
+		&i.EstimatedCarbsGrams,
+		&i.EstimatedProteinGrams,
 		&i.EstimatedCalories,
 		&i.RiskLevel,
 		&i.AnalysisNotes,
+		&i.IsUserEdited,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getMealByID = `-- name: GetMealByID :one
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+FROM meals
+WHERE id = $1
+  AND deleted_at IS NULL
+`
+
+func (q *Queries) GetMealByID(ctx context.Context, id int64) (Meal, error) {
+	row := q.db.QueryRow(ctx, getMealByID, id)
+	var i Meal
+	err := row.Scan(
+		&i.ID,
+		&i.DishName,
+		&i.MealType,
+		&i.ImageUrl,
+		&i.RecordedAt,
+		&i.AnalysisStatus,
+		&i.EstimatedSugarGrams,
+		&i.EstimatedCarbsGrams,
+		&i.EstimatedProteinGrams,
+		&i.EstimatedCalories,
+		&i.RiskLevel,
+		&i.AnalysisNotes,
+		&i.IsUserEdited,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const listMealsByDay = `-- name: ListMealsByDay :many
-SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_calories, risk_level, analysis_notes
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
 FROM meals
 WHERE recorded_at >= $1
   AND recorded_at < $2
+  AND deleted_at IS NULL
 ORDER BY recorded_at ASC
 `
 
@@ -106,9 +171,13 @@ func (q *Queries) ListMealsByDay(ctx context.Context, arg ListMealsByDayParams) 
 			&i.RecordedAt,
 			&i.AnalysisStatus,
 			&i.EstimatedSugarGrams,
+			&i.EstimatedCarbsGrams,
+			&i.EstimatedProteinGrams,
 			&i.EstimatedCalories,
 			&i.RiskLevel,
 			&i.AnalysisNotes,
+			&i.IsUserEdited,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -118,4 +187,272 @@ func (q *Queries) ListMealsByDay(ctx context.Context, arg ListMealsByDayParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const listRecentDistinctMeals = `-- name: ListRecentDistinctMeals :many
+WITH distinct_meals AS (
+    SELECT DISTINCT ON (lower(dish_name), COALESCE(image_url, ''))
+        id,
+        dish_name,
+        meal_type,
+        image_url,
+        recorded_at,
+        analysis_status,
+        estimated_sugar_grams,
+        estimated_carbs_grams,
+        estimated_protein_grams,
+        estimated_calories,
+        risk_level,
+        analysis_notes,
+        is_user_edited,
+        deleted_at
+    FROM meals
+    WHERE deleted_at IS NULL
+      AND ($1::text = '' OR dish_name ILIKE '%' || $1 || '%')
+    ORDER BY lower(dish_name), COALESCE(image_url, ''), recorded_at DESC, id DESC
+)
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+FROM distinct_meals
+ORDER BY
+    CASE WHEN $2::text = 'created_asc' THEN recorded_at END ASC,
+    CASE WHEN $2::text = 'created_desc' THEN recorded_at END DESC,
+    CASE WHEN $2::text = 'name_asc' THEN lower(dish_name) END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN lower(dish_name) END DESC,
+    recorded_at DESC,
+    id DESC
+LIMIT $4
+OFFSET $3
+`
+
+type ListRecentDistinctMealsParams struct {
+	Column1     string `json:"column_1"`
+	SortType    string `json:"sort_type"`
+	OffsetCount int32  `json:"offset_count"`
+	LimitCount  int32  `json:"limit_count"`
+}
+
+type ListRecentDistinctMealsRow struct {
+	ID                    int64              `json:"id"`
+	DishName              string             `json:"dish_name"`
+	MealType              string             `json:"meal_type"`
+	ImageUrl              *string            `json:"image_url"`
+	RecordedAt            pgtype.Timestamptz `json:"recorded_at"`
+	AnalysisStatus        string             `json:"analysis_status"`
+	EstimatedSugarGrams   float64            `json:"estimated_sugar_grams"`
+	EstimatedCarbsGrams   float64            `json:"estimated_carbs_grams"`
+	EstimatedProteinGrams float64            `json:"estimated_protein_grams"`
+	EstimatedCalories     int32              `json:"estimated_calories"`
+	RiskLevel             string             `json:"risk_level"`
+	AnalysisNotes         string             `json:"analysis_notes"`
+	IsUserEdited          bool               `json:"is_user_edited"`
+	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
+}
+
+func (q *Queries) ListRecentDistinctMeals(ctx context.Context, arg ListRecentDistinctMealsParams) ([]ListRecentDistinctMealsRow, error) {
+	rows, err := q.db.Query(ctx, listRecentDistinctMeals,
+		arg.Column1,
+		arg.SortType,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentDistinctMealsRow
+	for rows.Next() {
+		var i ListRecentDistinctMealsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DishName,
+			&i.MealType,
+			&i.ImageUrl,
+			&i.RecordedAt,
+			&i.AnalysisStatus,
+			&i.EstimatedSugarGrams,
+			&i.EstimatedCarbsGrams,
+			&i.EstimatedProteinGrams,
+			&i.EstimatedCalories,
+			&i.RiskLevel,
+			&i.AnalysisNotes,
+			&i.IsUserEdited,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const softDeleteMealByID = `-- name: SoftDeleteMealByID :execrows
+UPDATE meals
+SET deleted_at = NOW()
+WHERE id = $1
+  AND deleted_at IS NULL
+`
+
+func (q *Queries) SoftDeleteMealByID(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteMealByID, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateMealAnalysisByID = `-- name: UpdateMealAnalysisByID :one
+UPDATE meals
+SET
+    estimated_sugar_grams = $2,
+    estimated_carbs_grams = $3,
+    estimated_protein_grams = $4,
+    estimated_calories = $5,
+    is_user_edited = TRUE
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+`
+
+type UpdateMealAnalysisByIDParams struct {
+	ID                    int64   `json:"id"`
+	EstimatedSugarGrams   float64 `json:"estimated_sugar_grams"`
+	EstimatedCarbsGrams   float64 `json:"estimated_carbs_grams"`
+	EstimatedProteinGrams float64 `json:"estimated_protein_grams"`
+	EstimatedCalories     int32   `json:"estimated_calories"`
+}
+
+func (q *Queries) UpdateMealAnalysisByID(ctx context.Context, arg UpdateMealAnalysisByIDParams) (Meal, error) {
+	row := q.db.QueryRow(ctx, updateMealAnalysisByID,
+		arg.ID,
+		arg.EstimatedSugarGrams,
+		arg.EstimatedCarbsGrams,
+		arg.EstimatedProteinGrams,
+		arg.EstimatedCalories,
+	)
+	var i Meal
+	err := row.Scan(
+		&i.ID,
+		&i.DishName,
+		&i.MealType,
+		&i.ImageUrl,
+		&i.RecordedAt,
+		&i.AnalysisStatus,
+		&i.EstimatedSugarGrams,
+		&i.EstimatedCarbsGrams,
+		&i.EstimatedProteinGrams,
+		&i.EstimatedCalories,
+		&i.RiskLevel,
+		&i.AnalysisNotes,
+		&i.IsUserEdited,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateMealMetaByID = `-- name: UpdateMealMetaByID :one
+UPDATE meals
+SET
+    meal_type = $2,
+    recorded_at = $3
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+`
+
+type UpdateMealMetaByIDParams struct {
+	ID         int64              `json:"id"`
+	MealType   string             `json:"meal_type"`
+	RecordedAt pgtype.Timestamptz `json:"recorded_at"`
+}
+
+func (q *Queries) UpdateMealMetaByID(ctx context.Context, arg UpdateMealMetaByIDParams) (Meal, error) {
+	row := q.db.QueryRow(ctx, updateMealMetaByID, arg.ID, arg.MealType, arg.RecordedAt)
+	var i Meal
+	err := row.Scan(
+		&i.ID,
+		&i.DishName,
+		&i.MealType,
+		&i.ImageUrl,
+		&i.RecordedAt,
+		&i.AnalysisStatus,
+		&i.EstimatedSugarGrams,
+		&i.EstimatedCarbsGrams,
+		&i.EstimatedProteinGrams,
+		&i.EstimatedCalories,
+		&i.RiskLevel,
+		&i.AnalysisNotes,
+		&i.IsUserEdited,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateMealWithAnalysisByID = `-- name: UpdateMealWithAnalysisByID :one
+UPDATE meals
+SET
+    dish_name = $2,
+    meal_type = $3,
+    image_url = $4,
+    recorded_at = $5,
+    estimated_sugar_grams = $6,
+    estimated_carbs_grams = $7,
+    estimated_protein_grams = $8,
+    estimated_calories = $9,
+    risk_level = $10,
+    analysis_notes = $11,
+    is_user_edited = FALSE
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+`
+
+type UpdateMealWithAnalysisByIDParams struct {
+	ID                    int64              `json:"id"`
+	DishName              string             `json:"dish_name"`
+	MealType              string             `json:"meal_type"`
+	ImageUrl              *string            `json:"image_url"`
+	RecordedAt            pgtype.Timestamptz `json:"recorded_at"`
+	EstimatedSugarGrams   float64            `json:"estimated_sugar_grams"`
+	EstimatedCarbsGrams   float64            `json:"estimated_carbs_grams"`
+	EstimatedProteinGrams float64            `json:"estimated_protein_grams"`
+	EstimatedCalories     int32              `json:"estimated_calories"`
+	RiskLevel             string             `json:"risk_level"`
+	AnalysisNotes         string             `json:"analysis_notes"`
+}
+
+func (q *Queries) UpdateMealWithAnalysisByID(ctx context.Context, arg UpdateMealWithAnalysisByIDParams) (Meal, error) {
+	row := q.db.QueryRow(ctx, updateMealWithAnalysisByID,
+		arg.ID,
+		arg.DishName,
+		arg.MealType,
+		arg.ImageUrl,
+		arg.RecordedAt,
+		arg.EstimatedSugarGrams,
+		arg.EstimatedCarbsGrams,
+		arg.EstimatedProteinGrams,
+		arg.EstimatedCalories,
+		arg.RiskLevel,
+		arg.AnalysisNotes,
+	)
+	var i Meal
+	err := row.Scan(
+		&i.ID,
+		&i.DishName,
+		&i.MealType,
+		&i.ImageUrl,
+		&i.RecordedAt,
+		&i.AnalysisStatus,
+		&i.EstimatedSugarGrams,
+		&i.EstimatedCarbsGrams,
+		&i.EstimatedProteinGrams,
+		&i.EstimatedCalories,
+		&i.RiskLevel,
+		&i.AnalysisNotes,
+		&i.IsUserEdited,
+		&i.DeletedAt,
+	)
+	return i, err
 }

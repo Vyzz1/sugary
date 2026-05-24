@@ -6,9 +6,13 @@ CREATE TABLE meals (
     recorded_at TIMESTAMPTZ NOT NULL,
     analysis_status TEXT NOT NULL,
     estimated_sugar_grams DOUBLE PRECISION NOT NULL,
+    estimated_carbs_grams DOUBLE PRECISION NOT NULL DEFAULT 0,
+    estimated_protein_grams DOUBLE PRECISION NOT NULL DEFAULT 0,
     estimated_calories INTEGER NOT NULL,
     risk_level TEXT NOT NULL,
-    analysis_notes TEXT NOT NULL DEFAULT ''
+    analysis_notes TEXT NOT NULL DEFAULT '',
+    is_user_edited BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ
 );
 
 CREATE TABLE daily_reports (
