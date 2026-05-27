@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"sugary/internal/domain"
+	"sugary/internal/platform/timeutil"
 )
 
 type CompileDailyReport struct {
@@ -32,7 +33,7 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 		return domain.DailyReport{}, domain.ErrInvalidDate
 	}
 
-	day = startOfDayUTC(day)
+	day = timeutil.StartOfDay(day)
 
 	meals, err := uc.mealRepository.ListByDay(ctx, domain.MealsByDayFilter{
 		Day:  day,
@@ -43,7 +44,7 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 	}
 
 	report := domain.DailyReport{
-		Date: day,
+		Date: timeutil.CanonicalUTCDate(day),
 	}
 
 	if len(meals) == 0 {
@@ -127,11 +128,6 @@ func fallbackDailyReportAIInsights(summary string) domain.DailyReportAIInsights 
 		Recommendations: []string{},
 		PatternSignals:  []string{},
 	}
-}
-
-func startOfDayUTC(day time.Time) time.Time {
-	day = day.UTC()
-	return time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func compareRisk(left string, right string) int {

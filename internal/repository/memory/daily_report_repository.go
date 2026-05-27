@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"sugary/internal/domain"
+	"sugary/internal/platform/timeutil"
 )
 
 type DailyReportRepository struct {
@@ -40,5 +41,5 @@ func (r *DailyReportRepository) GetByDay(ctx context.Context, day time.Time) (do
 }
 
 func keyForDay(day time.Time) string {
-	return day.UTC().Format("2006-01-02")
+	return timeutil.CanonicalUTCDate(day).Format("2006-01-02")
 }

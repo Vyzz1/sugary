@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"sugary/internal/domain"
+	"sugary/internal/platform/timeutil"
 )
 
 type ListMealsByDay struct {
@@ -17,10 +18,10 @@ func NewListMealsByDay(mealRepository domain.MealRepository) ListMealsByDay {
 
 func (uc ListMealsByDay) Execute(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, domain.MealsByDayFilter, error) {
 	if filter.Day.IsZero() {
-		filter.Day = time.Now().UTC()
+		filter.Day = time.Now()
 	}
 
-	filter.Day = startOfDayUTC(filter.Day)
+	filter.Day = timeutil.StartOfDay(filter.Day)
 	filter.Sort = normalizeRecentMealsSort(filter.Sort)
 
 	meals, err := uc.mealRepository.ListByDay(ctx, filter)

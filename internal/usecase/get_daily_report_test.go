@@ -33,7 +33,12 @@ func TestGetDailyReportExecute(t *testing.T) {
 		},
 	})
 
-	report, found, err := uc.Execute(context.Background(), time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC))
+	location, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		t.Fatalf("expected valid location, got %v", err)
+	}
+
+	report, found, err := uc.Execute(context.Background(), time.Date(2026, 5, 21, 12, 0, 0, 0, location))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

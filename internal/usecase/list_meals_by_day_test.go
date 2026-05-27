@@ -37,3 +37,35 @@ func TestListMealsByDayExecuteNormalizesDate(t *testing.T) {
 		t.Fatalf("expected normalizedDay %s, got %s", expectedDay, normalized.Day)
 	}
 }
+
+func TestListMealsByDayExecutePreservesTimezoneDay(t *testing.T) {
+	t.Parallel()
+
+	location, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		t.Fatalf("expected valid location, got %v", err)
+	}
+
+	inputDay := time.Date(2026, 5, 27, 9, 30, 0, 0, location)
+	expectedDay := time.Date(2026, 5, 27, 0, 0, 0, 0, location)
+
+	uc := NewListMealsByDay(stubMealRepository{
+		listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+			if !filter.Day.Equal(expectedDay) {
+				t.Fatalf("expected normalized day %s, got %s", expectedDay, filter.Day)
+			}
+			if filter.Day.Location().String() != location.String() {
+				t.Fatalf("expected location %q, got %q", location.String(), filter.Day.Location().String())
+			}
+			return []domain.Meal{{ID: 1}}, nil
+		},
+	})
+
+	_, normalized, err := uc.Execute(context.Background(), domain.MealsByDayFilter{Day: inputDay})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !normalized.Day.Equal(expectedDay) {
+		t.Fatalf("expected normalizedDay %s, got %s", expectedDay, normalized.Day)
+	}
+}

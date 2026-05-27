@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"sugary/internal/domain"
+	"sugary/internal/platform/timeutil"
 )
 
 type MealRepository struct {
@@ -42,12 +43,14 @@ func (r *MealRepository) ListByDay(ctx context.Context, filter domain.MealsByDay
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	dayStart, dayEnd := timeutil.DayBoundsUTC(filter.Day)
 	result := make([]domain.Meal, 0)
 	for _, meal := range r.meals {
 		if meal.DeletedAt != nil {
 			continue
 		}
-		if sameDayUTC(meal.RecordedAt, filter.Day) {
+		recordedAtUTC := meal.RecordedAt.UTC()
+		if !recordedAtUTC.Before(dayStart) && recordedAtUTC.Before(dayEnd) {
 			result = append(result, meal)
 		}
 	}
@@ -189,15 +192,6 @@ func (r *MealRepository) SoftDelete(ctx context.Context, mealID int64) error {
 		}
 	}
 	return domain.ErrMealNotFound
-}
-
-func sameDayUTC(left time.Time, right time.Time) bool {
-	left = left.UTC()
-	right = right.UTC()
-
-	return left.Year() == right.Year() &&
-		left.Month() == right.Month() &&
-		left.Day() == right.Day()
 }
 
 func recentMealKey(meal domain.Meal) string {

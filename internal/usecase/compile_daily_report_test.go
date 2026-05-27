@@ -33,7 +33,12 @@ func (s stubDailyReportInterpreter) GenerateInsights(ctx context.Context, input 
 func TestCompileDailyReportExecute(t *testing.T) {
 	t.Parallel()
 
-	day := time.Date(2026, 5, 21, 15, 0, 0, 0, time.UTC)
+	location, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		t.Fatalf("expected valid location, got %v", err)
+	}
+
+	day := time.Date(2026, 5, 21, 15, 0, 0, 0, location)
 
 	uc := NewCompileDailyReport(
 		stubMealRepository{
@@ -43,6 +48,9 @@ func TestCompileDailyReportExecute(t *testing.T) {
 			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
 				if filter.Day.Hour() != 0 {
 					t.Fatalf("expected day to be normalized, got %v", filter.Day)
+				}
+				if filter.Day.Location().String() != location.String() {
+					t.Fatalf("expected timezone %q, got %q", location.String(), filter.Day.Location().String())
 				}
 				return []domain.Meal{
 					{
@@ -102,12 +110,16 @@ func TestCompileDailyReportExecute(t *testing.T) {
 	if report.AIInsights.Summary != "AI summary" {
 		t.Fatalf("expected AI insights summary, got %q", report.AIInsights.Summary)
 	}
+	expectedStoredDate := time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC)
+	if !report.Date.Equal(expectedStoredDate) {
+		t.Fatalf("expected stored report date %s, got %s", expectedStoredDate, report.Date)
+	}
 }
 
 func TestCompileDailyReportExecuteSkipsUnanalyzedMealsInAverage(t *testing.T) {
 	t.Parallel()
 
-	day := time.Date(2026, 5, 21, 15, 0, 0, 0, time.UTC)
+	day := time.Date(2026, 5, 21, 15, 0, 0, 0, time.FixedZone("ICT", 7*60*60))
 
 	uc := NewCompileDailyReport(
 		stubMealRepository{
@@ -170,7 +182,7 @@ func TestCompileDailyReportExecuteSkipsUnanalyzedMealsInAverage(t *testing.T) {
 func TestCompileDailyReportExecuteNoAnalyzedMeals(t *testing.T) {
 	t.Parallel()
 
-	day := time.Date(2026, 5, 21, 15, 0, 0, 0, time.UTC)
+	day := time.Date(2026, 5, 21, 15, 0, 0, 0, time.FixedZone("ICT", 7*60*60))
 
 	uc := NewCompileDailyReport(
 		stubMealRepository{

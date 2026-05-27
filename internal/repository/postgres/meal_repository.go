@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"sugary/internal/domain"
+	"sugary/internal/platform/timeutil"
 	reposqlc "sugary/internal/repository/postgres/sqlc"
 )
 
@@ -48,9 +49,11 @@ func (r MealRepository) Create(ctx context.Context, meal domain.Meal) (domain.Me
 }
 
 func (r MealRepository) ListByDay(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+	dayStart, dayEnd := timeutil.DayBoundsUTC(filter.Day)
+
 	rows, err := r.queries.ListMealsByDay(ctx, reposqlc.ListMealsByDayParams{
-		DayStart: pgtype.Timestamptz{Time: startOfDayUTC(filter.Day), Valid: true},
-		DayEnd:   pgtype.Timestamptz{Time: startOfDayUTC(filter.Day).Add(24 * time.Hour), Valid: true},
+		DayStart: pgtype.Timestamptz{Time: dayStart, Valid: true},
+		DayEnd:   pgtype.Timestamptz{Time: dayEnd, Valid: true},
 		SortType: filter.Sort,
 	})
 	if err != nil {
@@ -224,9 +227,4 @@ func splitNotes(value string) []string {
 	}
 
 	return strings.Split(value, "\n")
-}
-
-func startOfDayUTC(day time.Time) time.Time {
-	day = day.UTC()
-	return time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
 }

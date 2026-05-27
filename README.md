@@ -169,6 +169,7 @@ Login success response example:
 - returns all meals for a given day.
 - optional `date` query in `YYYY-MM-DD`; if omitted, backend uses today.
 - optional `sort` or `sortby`: `created_desc` (default), `created_asc`, `name_asc`, `name_desc`.
+- optional `X-Timezone` header controls how the requested day is interpreted; defaults to `Asia/Ho_Chi_Minh`.
 
 `POST /api/upload`:
 - accepts `multipart/form-data`
@@ -194,6 +195,10 @@ Login success response example:
 
 `DELETE /api/meals/:id`:
 - soft delete via `deleted_at` (record is hidden from app reads and daily report compilation).
+
+`GET /api/reports/daily` and `POST /api/jobs/daily-report`:
+- accept optional `X-Timezone` header to interpret `date` and `today` using a client timezone.
+- if the header is missing, backend falls back to `Asia/Ho_Chi_Minh`.
 
 Validation errors return structured codes, for example:
 

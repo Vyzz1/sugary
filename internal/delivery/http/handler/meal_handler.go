@@ -169,17 +169,23 @@ func (h MealHandler) Create(ctx *gin.Context) {
 }
 
 func (h MealHandler) ListByDay(ctx *gin.Context) {
+	location, timezoneName, err := requestLocation(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_timezone", "X-Timezone must be a valid IANA timezone, for example Asia/Ho_Chi_Minh"))
+		return
+	}
+
 	sortValue := strings.TrimSpace(ctx.Query("sort"))
 	if sortValue == "" {
 		sortValue = strings.TrimSpace(ctx.Query("sortby"))
 	}
 
 	filter := domain.MealsByDayFilter{
-		Day:  time.Now().UTC(),
+		Day:  time.Now().In(location),
 		Sort: sortValue,
 	}
 	if dayParam := strings.TrimSpace(ctx.Query("date")); dayParam != "" {
-		parsed, err := time.Parse("2006-01-02", dayParam)
+		parsed, err := parseDayInLocation(dayParam, location)
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_date", "date must be YYYY-MM-DD"))
 			return
@@ -194,9 +200,10 @@ func (h MealHandler) ListByDay(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, httpresponse.OKWithMeta(ctx, meals, gin.H{
-		"date":  normalized.Day.Format("2006-01-02"),
-		"sort":  normalized.Sort,
-		"count": len(meals),
+		"date":     normalized.Day.In(location).Format("2006-01-02"),
+		"sort":     normalized.Sort,
+		"timezone": timezoneName,
+		"count":    len(meals),
 	}))
 }
 

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"sugary/internal/domain"
+	"sugary/internal/platform/timeutil"
 )
 
 type GetDailyReport struct {
@@ -22,5 +23,5 @@ func (uc GetDailyReport) Execute(ctx context.Context, day time.Time) (domain.Dai
 		return domain.DailyReport{}, false, domain.ErrInvalidDate
 	}
 
-	return uc.dailyReportRepository.GetByDay(ctx, startOfDayUTC(day))
+	return uc.dailyReportRepository.GetByDay(ctx, timeutil.CanonicalUTCDate(day))
 }

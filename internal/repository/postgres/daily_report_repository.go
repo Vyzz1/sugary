@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"sugary/internal/domain"
+	"sugary/internal/platform/timeutil"
 	reposqlc "sugary/internal/repository/postgres/sqlc"
 )
 
@@ -30,7 +31,7 @@ func (r DailyReportRepository) Save(ctx context.Context, report domain.DailyRepo
 	}
 
 	return r.queries.UpsertDailyReport(ctx, reposqlc.UpsertDailyReportParams{
-		ReportDate:        pgtype.Date{Time: report.Date.UTC(), Valid: true},
+		ReportDate:        pgtype.Date{Time: timeutil.CanonicalUTCDate(report.Date), Valid: true},
 		MealCount:         int32(report.MealCount),
 		TotalSugarGrams:   report.TotalSugarGrams,
 		AverageSugarGrams: report.AverageSugarGrams,
@@ -41,7 +42,7 @@ func (r DailyReportRepository) Save(ctx context.Context, report domain.DailyRepo
 }
 
 func (r DailyReportRepository) GetByDay(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
-	row, err := r.queries.GetDailyReportByDate(ctx, pgtype.Date{Time: startOfDayUTC(day), Valid: true})
+	row, err := r.queries.GetDailyReportByDate(ctx, pgtype.Date{Time: timeutil.CanonicalUTCDate(day), Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.DailyReport{}, false, nil
