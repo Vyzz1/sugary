@@ -112,7 +112,7 @@ func (h MealHandler) Create(ctx *gin.Context) {
 
 	request.MealType = strings.TrimSpace(strings.ToLower(request.MealType))
 	if request.MealType != "" && !domain.IsValidMealType(request.MealType) {
-		ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_meal_type", "meal_type must be one of breakfast, lunch, dinner, snack, unspecified"))
+		ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_meal_type", "meal_type must be one of breakfast, lunch, dinner, snack, drink, unspecified"))
 		return
 	}
 	if request.ImageURL != nil {

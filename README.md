@@ -179,7 +179,7 @@ Login success response example:
 
 `PATCH /api/meals/:id`:
 - if only `meal_type` or `recorded_at` changes: update directly, no AI re-analysis.
-- if `dish_name` or `image_url` changes: backend re-runs AI analysis with new input.
+- if `dish_name` or `image_url` changes: backend updates the meal immediately with `analysis_status=processing`, then re-runs AI analysis asynchronously and pushes the result over WebSocket.
 
 `GET /api/meals/recent`:
 - returns recent distinct meals for the "choose again" UI.

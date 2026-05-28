@@ -12,6 +12,13 @@ const (
 	MealTypeDinner      = "dinner"
 	MealTypeSnack       = "snack"
 	MealTypeUnspecified = "unspecified"
+	MealTypeDrink       = "drink"
+)
+
+const (
+	AnalysisStatusProcessing = "processing"
+	AnalysisStatusCompleted  = "completed"
+	AnalysisStatusFailed     = "failed"
 )
 
 type Meal struct {
@@ -74,8 +81,15 @@ type MealRepository interface {
 	ListRecentDistinct(ctx context.Context, filter RecentMealsFilter) ([]Meal, int64, error)
 	GetByID(ctx context.Context, mealID int64) (Meal, error)
 	UpdateMeta(ctx context.Context, mealID int64, mealType string, recordedAt time.Time) (Meal, error)
+	UpdateForReanalysis(ctx context.Context, meal Meal) (Meal, error)
 	UpdateWithAnalysis(ctx context.Context, meal Meal) (Meal, error)
 	UpdateAnalysis(ctx context.Context, mealID int64, nutrition Nutrition) (Meal, error)
+	// UpdateAnalysisResult sets nutrition fields + marks analysis_status = 'completed'.
+	// Called by the async goroutine after AI analysis succeeds.
+	UpdateAnalysisResult(ctx context.Context, mealID int64, nutrition Nutrition) (Meal, error)
+	// UpdateAnalysisStatus updates only the analysis_status column.
+	// Called by the async goroutine when all retries are exhausted (status = 'failed').
+	UpdateAnalysisStatus(ctx context.Context, mealID int64, status string) error
 	SoftDelete(ctx context.Context, mealID int64) error
 }
 
@@ -90,7 +104,7 @@ type AnalyzeMealInput struct {
 
 func IsValidMealType(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case MealTypeBreakfast, MealTypeLunch, MealTypeDinner, MealTypeSnack, MealTypeUnspecified:
+	case MealTypeBreakfast, MealTypeLunch, MealTypeDinner, MealTypeSnack, MealTypeUnspecified, MealTypeDrink:
 		return true
 	default:
 		return false

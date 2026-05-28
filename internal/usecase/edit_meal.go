@@ -10,6 +10,7 @@ import (
 type EditMeal struct {
 	mealRepository    domain.MealRepository
 	nutritionAnalyzer domain.NutritionAnalyzer
+	publisher         MealAnalysisPublisher
 }
 
 func NewEditMeal(mealRepository domain.MealRepository, nutritionAnalyzer domain.NutritionAnalyzer) EditMeal {
@@ -17,6 +18,11 @@ func NewEditMeal(mealRepository domain.MealRepository, nutritionAnalyzer domain.
 		mealRepository:    mealRepository,
 		nutritionAnalyzer: nutritionAnalyzer,
 	}
+}
+
+func (uc EditMeal) WithPublisher(pub MealAnalysisPublisher) EditMeal {
+	uc.publisher = pub
+	return uc
 }
 
 func (uc EditMeal) Execute(ctx context.Context, input domain.EditMealInput) (domain.Meal, error) {
@@ -70,25 +76,27 @@ func (uc EditMeal) Execute(ctx context.Context, input domain.EditMealInput) (dom
 	}
 
 	if changedDishOrImage {
-		nutrition, err := uc.nutritionAnalyzer.AnalyzeMeal(ctx, domain.AnalyzeMealInput{
-			DishName: dishName,
-			ImageURL: imageURL,
-		})
-		if err != nil {
-			return domain.Meal{}, err
-		}
-
-		return uc.mealRepository.UpdateWithAnalysis(ctx, domain.Meal{
+		processingMeal, err := uc.mealRepository.UpdateForReanalysis(ctx, domain.Meal{
 			ID:         input.MealID,
 			DishName:   dishName,
 			MealType:   mealType,
 			ImageURL:   imageURL,
 			RecordedAt: recordedAt,
-			Analysis:   &nutrition,
 		})
+		if err != nil {
+			return domain.Meal{}, err
+		}
+
+		go uc.runAnalysisWithRetry(context.Background(), processingMeal)
+
+		return processingMeal, nil
 	}
 
 	return uc.mealRepository.UpdateMeta(ctx, input.MealID, mealType, recordedAt)
+}
+
+func (uc EditMeal) runAnalysisWithRetry(ctx context.Context, meal domain.Meal) {
+	editMealAnalysisRunner(uc.mealRepository, uc.nutritionAnalyzer, uc.publisher).run(ctx, meal)
 }
 
 func sameNullableString(left *string, right *string) bool {

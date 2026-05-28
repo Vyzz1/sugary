@@ -9,6 +9,7 @@ import (
 	"sugary/internal/config"
 	httpdelivery "sugary/internal/delivery/http"
 	"sugary/internal/delivery/http/handler"
+	"sugary/internal/platform/hub"
 	"sugary/internal/platform/logging"
 	"sugary/internal/repository/ai"
 	"sugary/internal/repository/postgres"
@@ -39,12 +40,15 @@ func main() {
 	dailyReportInterpreter := ai.NewGeminiDailyReportInterpreter(cfg.GeminiAPIKey, cfg.GeminiModel)
 	fileUploader := uploadproxy.NewHTTPUploader(cfg.Upload)
 
-	logMeal := usecase.NewLogMeal(mealRepository, nutritionAnalyzer)
+	// Hub broadcasts async AI results to all connected WebSocket clients.
+	wsHub := hub.New()
+
+	logMeal := usecase.NewLogMeal(mealRepository, nutritionAnalyzer).WithPublisher(wsHub)
 	uploadFile := usecase.NewUploadFile(fileUploader)
 	listMealsByDay := usecase.NewListMealsByDay(mealRepository)
 	listRecentMeals := usecase.NewListRecentMeals(mealRepository)
 	editMealAnalysis := usecase.NewEditMealAnalysis(mealRepository)
-	editMeal := usecase.NewEditMeal(mealRepository, nutritionAnalyzer)
+	editMeal := usecase.NewEditMeal(mealRepository, nutritionAnalyzer).WithPublisher(wsHub)
 	deleteMeal := usecase.NewDeleteMeal(mealRepository)
 	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository, dailyReportInterpreter)
 	getDailyReport := usecase.NewGetDailyReport(dailyReportRepository)
@@ -53,6 +57,7 @@ func main() {
 	authHandler := handler.NewAuthHandler(cfg.Auth)
 	uploadHandler := handler.NewUploadHandler(uploadFile)
 	mealHandler := handler.NewMealHandler(logMeal, listMealsByDay, listRecentMeals, editMealAnalysis, editMeal, deleteMeal)
+	wsHandler := handler.NewWSHandler(wsHub, cfg.Auth.JWTSecret)
 
 	router := httpdelivery.NewRouter(
 		cfg,
@@ -62,6 +67,7 @@ func main() {
 		mealHandler,
 		reportHandler,
 		handler.NewJobHandler(reportHandler),
+		wsHandler,
 	)
 
 	if err := router.Run(":" + cfg.Port); err != nil {

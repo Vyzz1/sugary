@@ -25,18 +25,31 @@ func NewMealRepository(queries *reposqlc.Queries) MealRepository {
 }
 
 func (r MealRepository) Create(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
+	// Nutrition fields may be zero when analysis_status = 'processing'.
+	var sugarGrams, carbsGrams, proteinGrams float64
+	var calories int32
+	var riskLevel, analysisNotes string
+	if meal.Analysis != nil {
+		sugarGrams = meal.Analysis.EstimatedSugarGrams
+		carbsGrams = meal.Analysis.EstimatedCarbsGrams
+		proteinGrams = meal.Analysis.EstimatedProteinGrams
+		calories = int32(meal.Analysis.EstimatedCalories)
+		riskLevel = meal.Analysis.RiskLevel
+		analysisNotes = strings.Join(meal.Analysis.Notes, "\n")
+	}
+
 	params := reposqlc.CreateMealParams{
 		DishName:              meal.DishName,
 		MealType:              meal.MealType,
 		ImageUrl:              meal.ImageURL,
 		RecordedAt:            pgtype.Timestamptz{Time: meal.RecordedAt.UTC(), Valid: true},
 		AnalysisStatus:        meal.AnalysisStatus,
-		EstimatedSugarGrams:   meal.Analysis.EstimatedSugarGrams,
-		EstimatedCarbsGrams:   meal.Analysis.EstimatedCarbsGrams,
-		EstimatedProteinGrams: meal.Analysis.EstimatedProteinGrams,
-		EstimatedCalories:     int32(meal.Analysis.EstimatedCalories),
-		RiskLevel:             meal.Analysis.RiskLevel,
-		AnalysisNotes:         strings.Join(meal.Analysis.Notes, "\n"),
+		EstimatedSugarGrams:   sugarGrams,
+		EstimatedCarbsGrams:   carbsGrams,
+		EstimatedProteinGrams: proteinGrams,
+		EstimatedCalories:     calories,
+		RiskLevel:             riskLevel,
+		AnalysisNotes:         analysisNotes,
 		IsUserEdited:          meal.IsUserEdited,
 	}
 
@@ -140,6 +153,23 @@ func (r MealRepository) UpdateMeta(ctx context.Context, mealID int64, mealType s
 	return mapMealRow(row), nil
 }
 
+func (r MealRepository) UpdateForReanalysis(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
+	row, err := r.queries.UpdateMealForReanalysisByID(ctx, reposqlc.UpdateMealForReanalysisByIDParams{
+		ID:         meal.ID,
+		DishName:   meal.DishName,
+		MealType:   meal.MealType,
+		ImageUrl:   meal.ImageURL,
+		RecordedAt: pgtype.Timestamptz{Time: meal.RecordedAt.UTC(), Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Meal{}, domain.ErrMealNotFound
+		}
+		return domain.Meal{}, err
+	}
+	return mapMealRow(row), nil
+}
+
 func (r MealRepository) UpdateWithAnalysis(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
 	row, err := r.queries.UpdateMealWithAnalysisByID(ctx, reposqlc.UpdateMealWithAnalysisByIDParams{
 		ID:                    meal.ID,
@@ -181,6 +211,43 @@ func (r MealRepository) UpdateAnalysis(ctx context.Context, mealID int64, nutrit
 	return mapMealRow(row), nil
 }
 
+// UpdateAnalysisResult sets all nutrition fields and marks the meal as 'completed'.
+// Called by the async goroutine after AI analysis succeeds.
+func (r MealRepository) UpdateAnalysisResult(ctx context.Context, mealID int64, nutrition domain.Nutrition) (domain.Meal, error) {
+	row, err := r.queries.UpdateMealAnalysisResultByID(ctx, reposqlc.UpdateMealAnalysisResultByIDParams{
+		ID:                    mealID,
+		EstimatedSugarGrams:   nutrition.EstimatedSugarGrams,
+		EstimatedCarbsGrams:   nutrition.EstimatedCarbsGrams,
+		EstimatedProteinGrams: nutrition.EstimatedProteinGrams,
+		EstimatedCalories:     int32(nutrition.EstimatedCalories),
+		RiskLevel:             nutrition.RiskLevel,
+		AnalysisNotes:         strings.Join(nutrition.Notes, "\n"),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Meal{}, domain.ErrMealNotFound
+		}
+		return domain.Meal{}, err
+	}
+	return mapMealRow(row), nil
+}
+
+// UpdateAnalysisStatus updates only the analysis_status column.
+// Called by the async goroutine when all retries are exhausted.
+func (r MealRepository) UpdateAnalysisStatus(ctx context.Context, mealID int64, status string) error {
+	affected, err := r.queries.UpdateMealAnalysisStatusByID(ctx, reposqlc.UpdateMealAnalysisStatusByIDParams{
+		ID:             mealID,
+		AnalysisStatus: status,
+	})
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return domain.ErrMealNotFound
+	}
+	return nil
+}
+
 func (r MealRepository) SoftDelete(ctx context.Context, mealID int64) error {
 	affected, err := r.queries.SoftDeleteMealByID(ctx, mealID)
 	if err != nil {
@@ -193,7 +260,7 @@ func (r MealRepository) SoftDelete(ctx context.Context, mealID int64) error {
 }
 
 func mapMealRow(row reposqlc.Meal) domain.Meal {
-	return domain.Meal{
+	meal := domain.Meal{
 		ID:             row.ID,
 		DishName:       row.DishName,
 		MealType:       row.MealType,
@@ -202,15 +269,20 @@ func mapMealRow(row reposqlc.Meal) domain.Meal {
 		AnalysisStatus: row.AnalysisStatus,
 		IsUserEdited:   row.IsUserEdited,
 		DeletedAt:      nullableTime(row.DeletedAt),
-		Analysis: &domain.Nutrition{
+	}
+	// Only populate Analysis when the AI analysis is done.
+	// Pending and failed meals intentionally return nil Analysis.
+	if row.AnalysisStatus == domain.AnalysisStatusCompleted {
+		meal.Analysis = &domain.Nutrition{
 			EstimatedSugarGrams:   row.EstimatedSugarGrams,
 			EstimatedCarbsGrams:   row.EstimatedCarbsGrams,
 			EstimatedProteinGrams: row.EstimatedProteinGrams,
 			EstimatedCalories:     int(row.EstimatedCalories),
 			RiskLevel:             row.RiskLevel,
 			Notes:                 splitNotes(row.AnalysisNotes),
-		},
+		}
 	}
+	return meal
 }
 
 func nullableTime(value pgtype.Timestamptz) *time.Time {

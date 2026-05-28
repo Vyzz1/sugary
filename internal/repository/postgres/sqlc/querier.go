@@ -19,6 +19,12 @@ type Querier interface {
 	ListRecentDistinctMeals(ctx context.Context, arg ListRecentDistinctMealsParams) ([]ListRecentDistinctMealsRow, error)
 	SoftDeleteMealByID(ctx context.Context, id int64) (int64, error)
 	UpdateMealAnalysisByID(ctx context.Context, arg UpdateMealAnalysisByIDParams) (Meal, error)
+	// Called by the async goroutine after AI analysis succeeds.
+	// Sets all nutrition fields and marks analysis_status = 'completed'.
+	UpdateMealAnalysisResultByID(ctx context.Context, arg UpdateMealAnalysisResultByIDParams) (Meal, error)
+	// Called by the async goroutine when all retries are exhausted.
+	UpdateMealAnalysisStatusByID(ctx context.Context, arg UpdateMealAnalysisStatusByIDParams) (int64, error)
+	UpdateMealForReanalysisByID(ctx context.Context, arg UpdateMealForReanalysisByIDParams) (Meal, error)
 	UpdateMealMetaByID(ctx context.Context, arg UpdateMealMetaByIDParams) (Meal, error)
 	UpdateMealWithAnalysisByID(ctx context.Context, arg UpdateMealWithAnalysisByIDParams) (Meal, error)
 	UpsertDailyReport(ctx context.Context, arg UpsertDailyReportParams) error

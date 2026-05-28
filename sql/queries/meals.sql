@@ -114,6 +114,19 @@ WHERE id = $1
   AND deleted_at IS NULL
 RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at;
 
+-- name: UpdateMealForReanalysisByID :one
+UPDATE meals
+SET
+    dish_name = $2,
+    meal_type = $3,
+    image_url = $4,
+    recorded_at = $5,
+    analysis_status = 'processing',
+    is_user_edited = FALSE
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at;
+
 -- name: UpdateMealWithAnalysisByID :one
 UPDATE meals
 SET
@@ -127,6 +140,7 @@ SET
     estimated_calories = $9,
     risk_level = $10,
     analysis_notes = $11,
+    analysis_status = 'completed',
     is_user_edited = FALSE
 WHERE id = $1
   AND deleted_at IS NULL
@@ -135,5 +149,29 @@ RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, est
 -- name: SoftDeleteMealByID :execrows
 UPDATE meals
 SET deleted_at = NOW()
+WHERE id = $1
+  AND deleted_at IS NULL;
+
+-- name: UpdateMealAnalysisResultByID :one
+-- Called by the async goroutine after AI analysis succeeds.
+-- Sets all nutrition fields and marks analysis_status = 'completed'.
+UPDATE meals
+SET
+    estimated_sugar_grams  = $2,
+    estimated_carbs_grams  = $3,
+    estimated_protein_grams = $4,
+    estimated_calories     = $5,
+    risk_level             = $6,
+    analysis_notes         = $7,
+    analysis_status        = 'completed',
+    is_user_edited         = FALSE
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at;
+
+-- name: UpdateMealAnalysisStatusByID :execrows
+-- Called by the async goroutine when all retries are exhausted.
+UPDATE meals
+SET analysis_status = $2
 WHERE id = $1
   AND deleted_at IS NULL;

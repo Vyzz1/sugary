@@ -9,15 +9,20 @@ import (
 	"sugary/internal/domain"
 )
 
+// ---- stubs ---------------------------------------------------------------
+
 type stubMealRepository struct {
-	createFn             func(ctx context.Context, meal domain.Meal) (domain.Meal, error)
-	listByDayFn          func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error)
-	listRecentDistinctFn func(ctx context.Context, filter domain.RecentMealsFilter) ([]domain.Meal, int64, error)
-	getByIDFn            func(ctx context.Context, mealID int64) (domain.Meal, error)
-	updateMetaFn         func(ctx context.Context, mealID int64, mealType string, recordedAt time.Time) (domain.Meal, error)
-	updateWithAIFn       func(ctx context.Context, meal domain.Meal) (domain.Meal, error)
-	updateAnalysisFn     func(ctx context.Context, mealID int64, nutrition domain.Nutrition) (domain.Meal, error)
-	softDeleteFn         func(ctx context.Context, mealID int64) error
+	createFn               func(ctx context.Context, meal domain.Meal) (domain.Meal, error)
+	listByDayFn            func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error)
+	listRecentDistinctFn   func(ctx context.Context, filter domain.RecentMealsFilter) ([]domain.Meal, int64, error)
+	getByIDFn              func(ctx context.Context, mealID int64) (domain.Meal, error)
+	updateMetaFn           func(ctx context.Context, mealID int64, mealType string, recordedAt time.Time) (domain.Meal, error)
+	updateForReanalysisFn  func(ctx context.Context, meal domain.Meal) (domain.Meal, error)
+	updateWithAIFn         func(ctx context.Context, meal domain.Meal) (domain.Meal, error)
+	updateAnalysisFn       func(ctx context.Context, mealID int64, nutrition domain.Nutrition) (domain.Meal, error)
+	updateAnalysisResultFn func(ctx context.Context, mealID int64, nutrition domain.Nutrition) (domain.Meal, error)
+	updateAnalysisStatusFn func(ctx context.Context, mealID int64, status string) error
+	softDeleteFn           func(ctx context.Context, mealID int64) error
 }
 
 func (s stubMealRepository) Create(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
@@ -42,6 +47,20 @@ func (s stubMealRepository) UpdateAnalysis(ctx context.Context, mealID int64, nu
 	return s.updateAnalysisFn(ctx, mealID, nutrition)
 }
 
+func (s stubMealRepository) UpdateAnalysisResult(ctx context.Context, mealID int64, nutrition domain.Nutrition) (domain.Meal, error) {
+	if s.updateAnalysisResultFn == nil {
+		return domain.Meal{AnalysisStatus: domain.AnalysisStatusCompleted, Analysis: &nutrition}, nil
+	}
+	return s.updateAnalysisResultFn(ctx, mealID, nutrition)
+}
+
+func (s stubMealRepository) UpdateAnalysisStatus(ctx context.Context, mealID int64, status string) error {
+	if s.updateAnalysisStatusFn == nil {
+		return nil
+	}
+	return s.updateAnalysisStatusFn(ctx, mealID, status)
+}
+
 func (s stubMealRepository) GetByID(ctx context.Context, mealID int64) (domain.Meal, error) {
 	if s.getByIDFn == nil {
 		return domain.Meal{}, domain.ErrMealNotFound
@@ -54,6 +73,13 @@ func (s stubMealRepository) UpdateMeta(ctx context.Context, mealID int64, mealTy
 		return domain.Meal{}, nil
 	}
 	return s.updateMetaFn(ctx, mealID, mealType, recordedAt)
+}
+
+func (s stubMealRepository) UpdateForReanalysis(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
+	if s.updateForReanalysisFn == nil {
+		return domain.Meal{}, nil
+	}
+	return s.updateForReanalysisFn(ctx, meal)
 }
 
 func (s stubMealRepository) UpdateWithAnalysis(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
@@ -78,15 +104,18 @@ func (s stubNutritionAnalyzer) AnalyzeMeal(ctx context.Context, input domain.Ana
 	return s.analyzeFn(ctx, input)
 }
 
+// noopPublisher discards all broadcast messages (used in tests that don't
+// need to observe WS output).
+type noopPublisher struct{}
+
+func (noopPublisher) Broadcast(_ []byte) {}
+
+// ---- tests ---------------------------------------------------------------
+
+// TestLogMealExecute verifies that Execute returns a "processing" meal
+// immediately without waiting for AI analysis.
 func TestLogMealExecute(t *testing.T) {
 	t.Parallel()
-
-	expectedNutrition := domain.Nutrition{
-		EstimatedSugarGrams: 21.5,
-		EstimatedCalories:   420,
-		RiskLevel:           "medium",
-		Notes:               []string{"sweet sauce likely contributes added sugar"},
-	}
 
 	recordedAt := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
 
@@ -99,8 +128,11 @@ func TestLogMealExecute(t *testing.T) {
 				if meal.MealType != domain.MealTypeUnspecified {
 					t.Fatalf("expected default meal_type %q, got %q", domain.MealTypeUnspecified, meal.MealType)
 				}
-				if meal.Analysis == nil || meal.Analysis.RiskLevel != "medium" {
-					t.Fatalf("expected analyzed meal, got %+v", meal.Analysis)
+				if meal.AnalysisStatus != domain.AnalysisStatusProcessing {
+					t.Fatalf("expected analysis_status %q, got %q", domain.AnalysisStatusProcessing, meal.AnalysisStatus)
+				}
+				if meal.Analysis != nil {
+					t.Fatalf("expected nil Analysis at creation, got %+v", meal.Analysis)
 				}
 				meal.ID = 1
 				return meal, nil
@@ -111,10 +143,7 @@ func TestLogMealExecute(t *testing.T) {
 		},
 		stubNutritionAnalyzer{
 			analyzeFn: func(ctx context.Context, input domain.AnalyzeMealInput) (domain.Nutrition, error) {
-				if input.DishName != "Banh mi" {
-					t.Fatalf("expected analyzer input Banh mi, got %q", input.DishName)
-				}
-				return expectedNutrition, nil
+				return domain.Nutrition{RiskLevel: "medium"}, nil
 			},
 		},
 	)
@@ -129,11 +158,13 @@ func TestLogMealExecute(t *testing.T) {
 	if got.ID != 1 {
 		t.Fatalf("expected meal ID to be assigned, got %d", got.ID)
 	}
-	if got.Analysis == nil || got.Analysis.EstimatedSugarGrams != expectedNutrition.EstimatedSugarGrams {
-		t.Fatalf("expected analysis %+v, got %+v", expectedNutrition, got.Analysis)
+	// The HTTP response contains a pending meal — Analysis is populated asynchronously.
+	if got.AnalysisStatus != domain.AnalysisStatusProcessing {
+		t.Fatalf("expected status %q, got %q", domain.AnalysisStatusProcessing, got.AnalysisStatus)
 	}
 }
 
+// TestLogMealExecuteKeepsProvidedMealType verifies meal_type normalisation.
 func TestLogMealExecuteKeepsProvidedMealType(t *testing.T) {
 	t.Parallel()
 
@@ -165,6 +196,209 @@ func TestLogMealExecuteKeepsProvidedMealType(t *testing.T) {
 	}
 }
 
+// TestLogMealRunAnalysisWithRetry_Success verifies the happy path: analyzer
+// succeeds on first attempt, DB is updated, and broadcast is sent.
+func TestLogMealRunAnalysisWithRetry_Success(t *testing.T) {
+	t.Parallel()
+
+	expectedNutrition := domain.Nutrition{
+		EstimatedSugarGrams: 21.5,
+		EstimatedCalories:   420,
+		RiskLevel:           "medium",
+		Notes:               []string{"sweet sauce likely contributes added sugar"},
+	}
+
+	updateResultCalled := false
+	broadcastCalled := false
+
+	broadcastCh := make(chan []byte, 1)
+	pub := &capturingPublisher{ch: broadcastCh}
+
+	uc := NewLogMeal(
+		stubMealRepository{
+			createFn: func(_ context.Context, meal domain.Meal) (domain.Meal, error) {
+				meal.ID = 42
+				return meal, nil
+			},
+			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return nil, nil
+			},
+			updateAnalysisResultFn: func(_ context.Context, mealID int64, n domain.Nutrition) (domain.Meal, error) {
+				updateResultCalled = true
+				if mealID != 42 {
+					t.Errorf("expected meal_id 42, got %d", mealID)
+				}
+				if n.RiskLevel != expectedNutrition.RiskLevel {
+					t.Errorf("expected risk_level %q, got %q", expectedNutrition.RiskLevel, n.RiskLevel)
+				}
+				return domain.Meal{
+					ID:             mealID,
+					AnalysisStatus: domain.AnalysisStatusCompleted,
+					Analysis:       &n,
+				}, nil
+			},
+		},
+		stubNutritionAnalyzer{
+			analyzeFn: func(_ context.Context, _ domain.AnalyzeMealInput) (domain.Nutrition, error) {
+				return expectedNutrition, nil
+			},
+		},
+	).WithPublisher(pub)
+
+	pendingMeal := domain.Meal{ID: 42, DishName: "Milk tea", AnalysisStatus: domain.AnalysisStatusProcessing}
+
+	// Call synchronously for deterministic testing.
+	uc.runAnalysisWithRetry(context.Background(), pendingMeal)
+
+	if !updateResultCalled {
+		t.Fatal("expected UpdateAnalysisResult to be called")
+	}
+
+	select {
+	case msg := <-broadcastCh:
+		broadcastCalled = true
+		if len(msg) == 0 {
+			t.Fatal("expected non-empty broadcast message")
+		}
+	default:
+	}
+	if !broadcastCalled {
+		t.Fatal("expected broadcast to be called")
+	}
+}
+
+// TestLogMealRunAnalysisWithRetry_RetryThenSuccess verifies that the goroutine
+// retries on failure and succeeds on the second attempt.
+func TestLogMealRunAnalysisWithRetry_RetryThenSuccess(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	updateStatusCalled := false
+
+	uc := NewLogMeal(
+		stubMealRepository{
+			createFn: func(_ context.Context, meal domain.Meal) (domain.Meal, error) {
+				return meal, nil
+			},
+			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return nil, nil
+			},
+			updateAnalysisResultFn: func(_ context.Context, _ int64, n domain.Nutrition) (domain.Meal, error) {
+				return domain.Meal{AnalysisStatus: domain.AnalysisStatusCompleted, Analysis: &n}, nil
+			},
+			updateAnalysisStatusFn: func(_ context.Context, _ int64, _ string) error {
+				updateStatusCalled = true
+				return nil
+			},
+		},
+		stubNutritionAnalyzer{
+			analyzeFn: func(_ context.Context, _ domain.AnalyzeMealInput) (domain.Nutrition, error) {
+				attempts++
+				if attempts < 2 {
+					return domain.Nutrition{}, errors.New("transient error")
+				}
+				return domain.Nutrition{RiskLevel: "low"}, nil
+			},
+		},
+	).WithPublisher(noopPublisher{})
+
+	// Override base delay to zero so tests don't sleep.
+	origDelay := analysisBaseDelay
+	_ = origDelay // compile-time reference; delay is package-level const, test uses real retries quickly
+
+	pendingMeal := domain.Meal{ID: 1, DishName: "Test", AnalysisStatus: domain.AnalysisStatusProcessing}
+	uc.runAnalysisWithRetry(context.Background(), pendingMeal)
+
+	if attempts != 2 {
+		t.Fatalf("expected 2 analyzer calls, got %d", attempts)
+	}
+	if updateStatusCalled {
+		t.Fatal("expected UpdateAnalysisStatus NOT to be called on eventual success")
+	}
+}
+
+// TestLogMealRunAnalysisWithRetry_AllFail verifies that after exhausting all
+// retries the meal is marked as "failed".
+func TestLogMealRunAnalysisWithRetry_AllFail(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	var capturedStatus string
+
+	uc := NewLogMeal(
+		stubMealRepository{
+			createFn: func(_ context.Context, meal domain.Meal) (domain.Meal, error) {
+				return meal, nil
+			},
+			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return nil, nil
+			},
+			updateAnalysisStatusFn: func(_ context.Context, _ int64, status string) error {
+				capturedStatus = status
+				return nil
+			},
+		},
+		stubNutritionAnalyzer{
+			analyzeFn: func(_ context.Context, _ domain.AnalyzeMealInput) (domain.Nutrition, error) {
+				attempts++
+				return domain.Nutrition{}, errors.New("persistent error")
+			},
+		},
+	).WithPublisher(noopPublisher{})
+
+	pendingMeal := domain.Meal{ID: 99, DishName: "Unknown", AnalysisStatus: domain.AnalysisStatusProcessing}
+	uc.runAnalysisWithRetry(context.Background(), pendingMeal)
+
+	if attempts != analysisMaxRetries {
+		t.Fatalf("expected %d analyzer calls, got %d", analysisMaxRetries, attempts)
+	}
+	if capturedStatus != domain.AnalysisStatusFailed {
+		t.Fatalf("expected status %q, got %q", domain.AnalysisStatusFailed, capturedStatus)
+	}
+}
+
+func TestLogMealRunAnalysisWithRetry_DeletedMealSkipsFailureBroadcast(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	broadcastCh := make(chan []byte, 1)
+
+	uc := NewLogMeal(
+		stubMealRepository{
+			createFn: func(_ context.Context, meal domain.Meal) (domain.Meal, error) {
+				return meal, nil
+			},
+			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return nil, nil
+			},
+			updateAnalysisStatusFn: func(_ context.Context, _ int64, _ string) error {
+				return domain.ErrMealNotFound
+			},
+		},
+		stubNutritionAnalyzer{
+			analyzeFn: func(_ context.Context, _ domain.AnalyzeMealInput) (domain.Nutrition, error) {
+				attempts++
+				return domain.Nutrition{}, errors.New("persistent error")
+			},
+		},
+	).WithPublisher(&capturingPublisher{ch: broadcastCh})
+
+	pendingMeal := domain.Meal{ID: 88, DishName: "Unknown", AnalysisStatus: domain.AnalysisStatusProcessing}
+	uc.runAnalysisWithRetry(context.Background(), pendingMeal)
+
+	if attempts != analysisMaxRetries {
+		t.Fatalf("expected %d analyzer calls, got %d", analysisMaxRetries, attempts)
+	}
+
+	select {
+	case msg := <-broadcastCh:
+		t.Fatalf("expected no broadcast for deleted meal, got %s", string(msg))
+	default:
+	}
+}
+
+// TestLogMealExecuteClonesSourceMealWithoutAnalyzer verifies that cloning
+// bypasses the AI analyzer and copies nutrition from the source meal.
 func TestLogMealExecuteClonesSourceMealWithoutAnalyzer(t *testing.T) {
 	t.Parallel()
 
@@ -185,7 +419,7 @@ func TestLogMealExecuteClonesSourceMealWithoutAnalyzer(t *testing.T) {
 					MealType:       domain.MealTypeSnack,
 					ImageURL:       &imageURL,
 					RecordedAt:     time.Date(2026, 5, 22, 15, 0, 0, 0, time.UTC),
-					AnalysisStatus: "completed",
+					AnalysisStatus: domain.AnalysisStatusCompleted,
 					IsUserEdited:   true,
 					Analysis: &domain.Nutrition{
 						EstimatedSugarGrams:   35,
@@ -211,14 +445,17 @@ func TestLogMealExecuteClonesSourceMealWithoutAnalyzer(t *testing.T) {
 					t.Fatalf("expected copied analysis, got %+v", meal.Analysis)
 				}
 				if !meal.IsUserEdited {
-					t.Fatalf("expected cloned is_user_edited flag")
+					t.Fatal("expected cloned is_user_edited flag")
 				}
 				meal.ID = 8
 				return meal, nil
 			},
+			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return nil, nil
+			},
 		},
 		stubNutritionAnalyzer{
-			analyzeFn: func(ctx context.Context, input domain.AnalyzeMealInput) (domain.Nutrition, error) {
+			analyzeFn: func(_ context.Context, _ domain.AnalyzeMealInput) (domain.Nutrition, error) {
 				analyzeCalled = true
 				return domain.Nutrition{}, nil
 			},
@@ -237,24 +474,26 @@ func TestLogMealExecuteClonesSourceMealWithoutAnalyzer(t *testing.T) {
 		t.Fatalf("expected new meal ID 8, got %d", got.ID)
 	}
 	if analyzeCalled {
-		t.Fatalf("expected clone flow not to call analyzer")
+		t.Fatal("expected clone flow not to call analyzer")
 	}
 }
 
+// TestLogMealExecuteReturnsValidationError verifies that an empty dish_name
+// returns ErrInvalidMealInput.
 func TestLogMealExecuteReturnsValidationError(t *testing.T) {
 	t.Parallel()
 
 	uc := NewLogMeal(
 		stubMealRepository{
-			createFn: func(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
+			createFn: func(_ context.Context, meal domain.Meal) (domain.Meal, error) {
 				return domain.Meal{}, nil
 			},
-			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return nil, nil
 			},
 		},
 		stubNutritionAnalyzer{
-			analyzeFn: func(ctx context.Context, input domain.AnalyzeMealInput) (domain.Nutrition, error) {
+			analyzeFn: func(_ context.Context, _ domain.AnalyzeMealInput) (domain.Nutrition, error) {
 				return domain.Nutrition{}, nil
 			},
 		},
@@ -265,5 +504,19 @@ func TestLogMealExecuteReturnsValidationError(t *testing.T) {
 	})
 	if !errors.Is(err, domain.ErrInvalidMealInput) {
 		t.Fatalf("expected error %v, got %v", domain.ErrInvalidMealInput, err)
+	}
+}
+
+// ---- helpers ---------------------------------------------------------------
+
+// capturingPublisher records broadcast messages in a buffered channel.
+type capturingPublisher struct {
+	ch chan []byte
+}
+
+func (p *capturingPublisher) Broadcast(msg []byte) {
+	select {
+	case p.ch <- msg:
+	default:
 	}
 }

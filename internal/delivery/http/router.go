@@ -16,12 +16,15 @@ func NewRouter(
 	mealHandler handler.MealHandler,
 	reportHandler handler.ReportHandler,
 	jobHandler handler.JobHandler,
+	wsHandler handler.WSHandler,
 ) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.CORS(cfg.CORSAllowOrigins))
 	router.Use(middleware.RequestLogger())
 	router.GET("/health", healthHandler.Check)
+	// WebSocket endpoint — JWT is validated inside the handler via ?token= query param.
+	router.GET("/ws", wsHandler.Connect)
 	api := router.Group("/api")
 	{
 

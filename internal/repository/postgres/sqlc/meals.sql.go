@@ -151,7 +151,7 @@ ORDER BY
     CASE WHEN $3::text = 'created_desc' THEN recorded_at END DESC,
     CASE WHEN $3::text = 'name_asc' THEN unaccent(lower(dish_name)) END ASC,
     CASE WHEN $3::text = 'name_desc' THEN unaccent(lower(dish_name)) END DESC,
-    recorded_at DESC,
+    recorded_at DESC, 
     id DESC
 `
 
@@ -359,6 +359,135 @@ func (q *Queries) UpdateMealAnalysisByID(ctx context.Context, arg UpdateMealAnal
 	return i, err
 }
 
+const updateMealAnalysisResultByID = `-- name: UpdateMealAnalysisResultByID :one
+UPDATE meals
+SET
+    estimated_sugar_grams  = $2,
+    estimated_carbs_grams  = $3,
+    estimated_protein_grams = $4,
+    estimated_calories     = $5,
+    risk_level             = $6,
+    analysis_notes         = $7,
+    analysis_status        = 'completed',
+    is_user_edited         = FALSE
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+`
+
+type UpdateMealAnalysisResultByIDParams struct {
+	ID                    int64   `json:"id"`
+	EstimatedSugarGrams   float64 `json:"estimated_sugar_grams"`
+	EstimatedCarbsGrams   float64 `json:"estimated_carbs_grams"`
+	EstimatedProteinGrams float64 `json:"estimated_protein_grams"`
+	EstimatedCalories     int32   `json:"estimated_calories"`
+	RiskLevel             string  `json:"risk_level"`
+	AnalysisNotes         string  `json:"analysis_notes"`
+}
+
+// Called by the async goroutine after AI analysis succeeds.
+// Sets all nutrition fields and marks analysis_status = 'completed'.
+func (q *Queries) UpdateMealAnalysisResultByID(ctx context.Context, arg UpdateMealAnalysisResultByIDParams) (Meal, error) {
+	row := q.db.QueryRow(ctx, updateMealAnalysisResultByID,
+		arg.ID,
+		arg.EstimatedSugarGrams,
+		arg.EstimatedCarbsGrams,
+		arg.EstimatedProteinGrams,
+		arg.EstimatedCalories,
+		arg.RiskLevel,
+		arg.AnalysisNotes,
+	)
+	var i Meal
+	err := row.Scan(
+		&i.ID,
+		&i.DishName,
+		&i.MealType,
+		&i.ImageUrl,
+		&i.RecordedAt,
+		&i.AnalysisStatus,
+		&i.EstimatedSugarGrams,
+		&i.EstimatedCarbsGrams,
+		&i.EstimatedProteinGrams,
+		&i.EstimatedCalories,
+		&i.RiskLevel,
+		&i.AnalysisNotes,
+		&i.IsUserEdited,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateMealAnalysisStatusByID = `-- name: UpdateMealAnalysisStatusByID :execrows
+UPDATE meals
+SET analysis_status = $2
+WHERE id = $1
+  AND deleted_at IS NULL
+`
+
+type UpdateMealAnalysisStatusByIDParams struct {
+	ID             int64  `json:"id"`
+	AnalysisStatus string `json:"analysis_status"`
+}
+
+// Called by the async goroutine when all retries are exhausted.
+func (q *Queries) UpdateMealAnalysisStatusByID(ctx context.Context, arg UpdateMealAnalysisStatusByIDParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateMealAnalysisStatusByID, arg.ID, arg.AnalysisStatus)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateMealForReanalysisByID = `-- name: UpdateMealForReanalysisByID :one
+UPDATE meals
+SET
+    dish_name = $2,
+    meal_type = $3,
+    image_url = $4,
+    recorded_at = $5,
+    analysis_status = 'processing',
+    is_user_edited = FALSE
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+`
+
+type UpdateMealForReanalysisByIDParams struct {
+	ID         int64              `json:"id"`
+	DishName   string             `json:"dish_name"`
+	MealType   string             `json:"meal_type"`
+	ImageUrl   *string            `json:"image_url"`
+	RecordedAt pgtype.Timestamptz `json:"recorded_at"`
+}
+
+func (q *Queries) UpdateMealForReanalysisByID(ctx context.Context, arg UpdateMealForReanalysisByIDParams) (Meal, error) {
+	row := q.db.QueryRow(ctx, updateMealForReanalysisByID,
+		arg.ID,
+		arg.DishName,
+		arg.MealType,
+		arg.ImageUrl,
+		arg.RecordedAt,
+	)
+	var i Meal
+	err := row.Scan(
+		&i.ID,
+		&i.DishName,
+		&i.MealType,
+		&i.ImageUrl,
+		&i.RecordedAt,
+		&i.AnalysisStatus,
+		&i.EstimatedSugarGrams,
+		&i.EstimatedCarbsGrams,
+		&i.EstimatedProteinGrams,
+		&i.EstimatedCalories,
+		&i.RiskLevel,
+		&i.AnalysisNotes,
+		&i.IsUserEdited,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const updateMealMetaByID = `-- name: UpdateMealMetaByID :one
 UPDATE meals
 SET
@@ -410,6 +539,7 @@ SET
     estimated_calories = $9,
     risk_level = $10,
     analysis_notes = $11,
+    analysis_status = 'completed',
     is_user_edited = FALSE
 WHERE id = $1
   AND deleted_at IS NULL

@@ -141,6 +141,27 @@ func (r *MealRepository) UpdateMeta(ctx context.Context, mealID int64, mealType 
 	return domain.Meal{}, domain.ErrMealNotFound
 }
 
+func (r *MealRepository) UpdateForReanalysis(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
+	_ = ctx
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i := range r.meals {
+		if r.meals[i].ID == meal.ID && r.meals[i].DeletedAt == nil {
+			r.meals[i].DishName = meal.DishName
+			r.meals[i].MealType = meal.MealType
+			r.meals[i].ImageURL = meal.ImageURL
+			r.meals[i].RecordedAt = meal.RecordedAt
+			r.meals[i].AnalysisStatus = domain.AnalysisStatusProcessing
+			r.meals[i].IsUserEdited = false
+			r.meals[i].Analysis = nil
+			return r.meals[i], nil
+		}
+	}
+	return domain.Meal{}, domain.ErrMealNotFound
+}
+
 func (r *MealRepository) UpdateWithAnalysis(ctx context.Context, meal domain.Meal) (domain.Meal, error) {
 	_ = ctx
 
@@ -191,6 +212,43 @@ func (r *MealRepository) SoftDelete(ctx context.Context, mealID int64) error {
 			return nil
 		}
 	}
+	return domain.ErrMealNotFound
+}
+
+func (r *MealRepository) UpdateAnalysisResult(ctx context.Context, mealID int64, nutrition domain.Nutrition) (domain.Meal, error) {
+	_ = ctx
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i := range r.meals {
+		if r.meals[i].ID == mealID && r.meals[i].DeletedAt == nil {
+			r.meals[i].Analysis = &nutrition
+			r.meals[i].AnalysisStatus = domain.AnalysisStatusCompleted
+			r.meals[i].IsUserEdited = false
+			return r.meals[i], nil
+		}
+	}
+
+	return domain.Meal{}, domain.ErrMealNotFound
+}
+
+func (r *MealRepository) UpdateAnalysisStatus(ctx context.Context, mealID int64, status string) error {
+	_ = ctx
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i := range r.meals {
+		if r.meals[i].ID == mealID && r.meals[i].DeletedAt == nil {
+			r.meals[i].AnalysisStatus = status
+			if status != domain.AnalysisStatusCompleted {
+				r.meals[i].Analysis = nil
+			}
+			return nil
+		}
+	}
+
 	return domain.ErrMealNotFound
 }
 
