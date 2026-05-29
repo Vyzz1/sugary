@@ -26,10 +26,10 @@ INSERT INTO meals (
     $11,
     $12
 )
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at;
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at;
 
 -- name: ListMealsByDay :many
-SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 FROM meals
 WHERE recorded_at >= sqlc.arg(day_start)
   AND recorded_at < sqlc.arg(day_end)
@@ -58,6 +58,8 @@ WITH distinct_meals AS (
         risk_level,
         analysis_notes,
         is_user_edited,
+        analysis_retry_count,
+        last_analysis_attempt_at,
         deleted_at
     FROM meals
     WHERE deleted_at IS NULL
@@ -97,10 +99,10 @@ SET
     is_user_edited = TRUE
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at;
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at;
 
 -- name: GetMealByID :one
-SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 FROM meals
 WHERE id = $1
   AND deleted_at IS NULL;
@@ -112,7 +114,7 @@ SET
     recorded_at = $3
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at;
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at;
 
 -- name: UpdateMealForReanalysisByID :one
 UPDATE meals
@@ -122,10 +124,12 @@ SET
     image_url = $4,
     recorded_at = $5,
     analysis_status = 'processing',
-    is_user_edited = FALSE
+    is_user_edited = FALSE,
+    analysis_retry_count = 0,
+    last_analysis_attempt_at = NULL
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at;
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at;
 
 -- name: UpdateMealWithAnalysisByID :one
 UPDATE meals
@@ -144,7 +148,7 @@ SET
     is_user_edited = FALSE
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at;
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at;
 
 -- name: SoftDeleteMealByID :execrows
 UPDATE meals
@@ -167,11 +171,42 @@ SET
     is_user_edited         = FALSE
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at;
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at;
+
+-- name: ListRetryableFailedMeals :many
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
+FROM meals
+WHERE analysis_status = 'failed'
+  AND deleted_at IS NULL
+  AND analysis_retry_count < sqlc.arg(max_retry_count)
+  AND (
+    last_analysis_attempt_at IS NULL
+    OR last_analysis_attempt_at <= sqlc.arg(before_time)
+  )
+ORDER BY last_analysis_attempt_at ASC NULLS FIRST, id ASC
+LIMIT sqlc.arg(limit_count);
+
+-- name: RetryFailedMealAnalysisByID :one
+UPDATE meals
+SET
+    analysis_status = 'processing'
+WHERE id = $1
+  AND analysis_status = 'failed'
+  AND deleted_at IS NULL
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at;
 
 -- name: UpdateMealAnalysisStatusByID :execrows
 -- Called by the async goroutine when all retries are exhausted.
 UPDATE meals
-SET analysis_status = $2
+SET
+    analysis_status = $2,
+    analysis_retry_count = CASE
+        WHEN $2 = 'failed' THEN analysis_retry_count + 1
+        ELSE analysis_retry_count
+    END,
+    last_analysis_attempt_at = CASE
+        WHEN $2 = 'failed' THEN NOW()
+        ELSE last_analysis_attempt_at
+    END
 WHERE id = $1
   AND deleted_at IS NULL;

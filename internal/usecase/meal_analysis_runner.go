@@ -74,6 +74,15 @@ func (r mealAnalysisRunner) run(ctx context.Context, meal domain.Meal) {
 			time.Sleep(backoff)
 		}
 
+		if _, err := r.mealRepository.GetByID(ctx, meal.ID); err != nil {
+			if err == domain.ErrMealNotFound {
+				zap.L().Info(r.logs.statusSkipDeleted, zap.Int64("meal_id", meal.ID))
+				return
+			}
+			lastErr = err
+			break
+		}
+
 		attemptStartedAt := time.Now()
 		nutrition, lastErr = r.nutritionAnalyzer.AnalyzeMeal(ctx, input)
 		attemptLatency := time.Since(attemptStartedAt)

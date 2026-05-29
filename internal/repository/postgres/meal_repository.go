@@ -108,14 +108,16 @@ func (r MealRepository) ListRecentDistinct(ctx context.Context, filter domain.Re
 
 func mapRecentMealRow(row reposqlc.ListRecentDistinctMealsRow) domain.Meal {
 	return domain.Meal{
-		ID:             row.ID,
-		DishName:       row.DishName,
-		MealType:       row.MealType,
-		ImageURL:       row.ImageUrl,
-		RecordedAt:     row.RecordedAt.Time,
-		AnalysisStatus: row.AnalysisStatus,
-		IsUserEdited:   row.IsUserEdited,
-		DeletedAt:      nullableTime(row.DeletedAt),
+		ID:                    row.ID,
+		DishName:              row.DishName,
+		MealType:              row.MealType,
+		ImageURL:              row.ImageUrl,
+		RecordedAt:            row.RecordedAt.Time,
+		AnalysisStatus:        row.AnalysisStatus,
+		IsUserEdited:          row.IsUserEdited,
+		AnalysisRetryCount:    row.AnalysisRetryCount,
+		LastAnalysisAttemptAt: nullableTime(row.LastAnalysisAttemptAt),
+		DeletedAt:             nullableTime(row.DeletedAt),
 		Analysis: &domain.Nutrition{
 			EstimatedSugarGrams:   row.EstimatedSugarGrams,
 			EstimatedCarbsGrams:   row.EstimatedCarbsGrams,
@@ -136,6 +138,24 @@ func (r MealRepository) GetByID(ctx context.Context, mealID int64) (domain.Meal,
 		return domain.Meal{}, err
 	}
 	return mapMealRow(row), nil
+}
+
+func (r MealRepository) ListRetryableFailed(ctx context.Context, filter domain.RetryableFailedMealsFilter) ([]domain.Meal, error) {
+	rows, err := r.queries.ListRetryableFailedMeals(ctx, reposqlc.ListRetryableFailedMealsParams{
+		MaxRetryCount: filter.MaxRetryCount,
+		BeforeTime:    pgtype.Timestamptz{Time: filter.Before.UTC(), Valid: true},
+		LimitCount:    filter.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	meals := make([]domain.Meal, 0, len(rows))
+	for _, row := range rows {
+		meals = append(meals, mapMealRow(row))
+	}
+
+	return meals, nil
 }
 
 func (r MealRepository) UpdateMeta(ctx context.Context, mealID int64, mealType string, recordedAt time.Time) (domain.Meal, error) {
@@ -232,6 +252,17 @@ func (r MealRepository) UpdateAnalysisResult(ctx context.Context, mealID int64, 
 	return mapMealRow(row), nil
 }
 
+func (r MealRepository) RetryFailedAnalysis(ctx context.Context, mealID int64) (domain.Meal, error) {
+	row, err := r.queries.RetryFailedMealAnalysisByID(ctx, mealID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Meal{}, domain.ErrMealNotFound
+		}
+		return domain.Meal{}, err
+	}
+	return mapMealRow(row), nil
+}
+
 // UpdateAnalysisStatus updates only the analysis_status column.
 // Called by the async goroutine when all retries are exhausted.
 func (r MealRepository) UpdateAnalysisStatus(ctx context.Context, mealID int64, status string) error {
@@ -261,14 +292,16 @@ func (r MealRepository) SoftDelete(ctx context.Context, mealID int64) error {
 
 func mapMealRow(row reposqlc.Meal) domain.Meal {
 	meal := domain.Meal{
-		ID:             row.ID,
-		DishName:       row.DishName,
-		MealType:       row.MealType,
-		ImageURL:       row.ImageUrl,
-		RecordedAt:     row.RecordedAt.Time,
-		AnalysisStatus: row.AnalysisStatus,
-		IsUserEdited:   row.IsUserEdited,
-		DeletedAt:      nullableTime(row.DeletedAt),
+		ID:                    row.ID,
+		DishName:              row.DishName,
+		MealType:              row.MealType,
+		ImageURL:              row.ImageUrl,
+		RecordedAt:            row.RecordedAt.Time,
+		AnalysisStatus:        row.AnalysisStatus,
+		IsUserEdited:          row.IsUserEdited,
+		AnalysisRetryCount:    row.AnalysisRetryCount,
+		LastAnalysisAttemptAt: nullableTime(row.LastAnalysisAttemptAt),
+		DeletedAt:             nullableTime(row.DeletedAt),
 	}
 	// Only populate Analysis when the AI analysis is done.
 	// Pending and failed meals intentionally return nil Analysis.

@@ -21,6 +21,8 @@ type stubMealRepository struct {
 	updateWithAIFn         func(ctx context.Context, meal domain.Meal) (domain.Meal, error)
 	updateAnalysisFn       func(ctx context.Context, mealID int64, nutrition domain.Nutrition) (domain.Meal, error)
 	updateAnalysisResultFn func(ctx context.Context, mealID int64, nutrition domain.Nutrition) (domain.Meal, error)
+	listRetryableFailedFn  func(ctx context.Context, filter domain.RetryableFailedMealsFilter) ([]domain.Meal, error)
+	retryFailedAnalysisFn  func(ctx context.Context, mealID int64) (domain.Meal, error)
 	updateAnalysisStatusFn func(ctx context.Context, mealID int64, status string) error
 	softDeleteFn           func(ctx context.Context, mealID int64) error
 }
@@ -52,6 +54,20 @@ func (s stubMealRepository) UpdateAnalysisResult(ctx context.Context, mealID int
 		return domain.Meal{AnalysisStatus: domain.AnalysisStatusCompleted, Analysis: &nutrition}, nil
 	}
 	return s.updateAnalysisResultFn(ctx, mealID, nutrition)
+}
+
+func (s stubMealRepository) ListRetryableFailed(ctx context.Context, filter domain.RetryableFailedMealsFilter) ([]domain.Meal, error) {
+	if s.listRetryableFailedFn == nil {
+		return nil, nil
+	}
+	return s.listRetryableFailedFn(ctx, filter)
+}
+
+func (s stubMealRepository) RetryFailedAnalysis(ctx context.Context, mealID int64) (domain.Meal, error) {
+	if s.retryFailedAnalysisFn == nil {
+		return domain.Meal{}, domain.ErrMealNotFound
+	}
+	return s.retryFailedAnalysisFn(ctx, mealID)
 }
 
 func (s stubMealRepository) UpdateAnalysisStatus(ctx context.Context, mealID int64, status string) error {
@@ -220,6 +236,9 @@ func TestLogMealRunAnalysisWithRetry_Success(t *testing.T) {
 				meal.ID = 42
 				return meal, nil
 			},
+			getByIDFn: func(_ context.Context, mealID int64) (domain.Meal, error) {
+				return domain.Meal{ID: mealID, DishName: "Milk tea"}, nil
+			},
 			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return nil, nil
 			},
@@ -280,6 +299,9 @@ func TestLogMealRunAnalysisWithRetry_RetryThenSuccess(t *testing.T) {
 			createFn: func(_ context.Context, meal domain.Meal) (domain.Meal, error) {
 				return meal, nil
 			},
+			getByIDFn: func(_ context.Context, mealID int64) (domain.Meal, error) {
+				return domain.Meal{ID: mealID, DishName: "Test"}, nil
+			},
 			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return nil, nil
 			},
@@ -330,6 +352,9 @@ func TestLogMealRunAnalysisWithRetry_AllFail(t *testing.T) {
 			createFn: func(_ context.Context, meal domain.Meal) (domain.Meal, error) {
 				return meal, nil
 			},
+			getByIDFn: func(_ context.Context, mealID int64) (domain.Meal, error) {
+				return domain.Meal{ID: mealID, DishName: "Unknown"}, nil
+			},
 			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return nil, nil
 			},
@@ -368,6 +393,9 @@ func TestLogMealRunAnalysisWithRetry_DeletedMealSkipsFailureBroadcast(t *testing
 			createFn: func(_ context.Context, meal domain.Meal) (domain.Meal, error) {
 				return meal, nil
 			},
+			getByIDFn: func(_ context.Context, mealID int64) (domain.Meal, error) {
+				return domain.Meal{ID: mealID, DishName: "Unknown"}, nil
+			},
 			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
 				return nil, nil
 			},
@@ -394,6 +422,39 @@ func TestLogMealRunAnalysisWithRetry_DeletedMealSkipsFailureBroadcast(t *testing
 	case msg := <-broadcastCh:
 		t.Fatalf("expected no broadcast for deleted meal, got %s", string(msg))
 	default:
+	}
+}
+
+func TestLogMealRunAnalysisWithRetry_DeletedBeforeAttemptSkipsAnalyzer(t *testing.T) {
+	t.Parallel()
+
+	analyzeCalled := false
+
+	uc := NewLogMeal(
+		stubMealRepository{
+			createFn: func(_ context.Context, meal domain.Meal) (domain.Meal, error) {
+				return meal, nil
+			},
+			listByDayFn: func(_ context.Context, _ domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return nil, nil
+			},
+			getByIDFn: func(_ context.Context, mealID int64) (domain.Meal, error) {
+				return domain.Meal{}, domain.ErrMealNotFound
+			},
+		},
+		stubNutritionAnalyzer{
+			analyzeFn: func(_ context.Context, _ domain.AnalyzeMealInput) (domain.Nutrition, error) {
+				analyzeCalled = true
+				return domain.Nutrition{}, nil
+			},
+		},
+	).WithPublisher(noopPublisher{})
+
+	pendingMeal := domain.Meal{ID: 123, DishName: "Deleted", AnalysisStatus: domain.AnalysisStatusProcessing}
+	uc.runAnalysisWithRetry(context.Background(), pendingMeal)
+
+	if analyzeCalled {
+		t.Fatal("expected analyzer not to run for deleted meal")
 	}
 }
 

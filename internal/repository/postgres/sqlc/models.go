@@ -16,6 +16,8 @@ type DailyReport struct {
 	HighestRiskLevel  string      `json:"highest_risk_level"`
 	Summary           string      `json:"summary"`
 	AiInsights        []byte      `json:"ai_insights"`
+	AiInsightSource   string      `json:"ai_insight_source"`
+	AiInsightStatus   string      `json:"ai_insight_status"`
 }
 
 type Meal struct {
@@ -32,5 +34,7 @@ type Meal struct {
 	RiskLevel             string             `json:"risk_level"`
 	AnalysisNotes         string             `json:"analysis_notes"`
 	IsUserEdited          bool               `json:"is_user_edited"`
+	AnalysisRetryCount    int32              `json:"analysis_retry_count"`
+	LastAnalysisAttemptAt pgtype.Timestamptz `json:"last_analysis_attempt_at"`
 	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
 }

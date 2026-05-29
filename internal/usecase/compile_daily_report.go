@@ -96,7 +96,9 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 	}
 
 	report := domain.DailyReport{
-		Date: timeutil.CanonicalUTCDate(day),
+		Date:            timeutil.CanonicalUTCDate(day),
+		AIInsightSource: "fallback",
+		AIInsightStatus: "fallback",
 	}
 
 	if len(meals) == 0 {
@@ -144,6 +146,14 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 			insights.Summary = strings.TrimSpace(insights.Summary)
 			report.Summary = insights.Summary
 			report.AIInsights = insights
+			report.AIInsightSource = "gemini"
+			report.AIInsightStatus = "completed"
+		} else if err != nil {
+			zap.L().Warn("daily_report_ai_fallback_used",
+				zap.String("report_date", report.Date.Format("2006-01-02")),
+				zap.Int("meal_count", report.MealCount),
+				zap.Error(err),
+			)
 		}
 	}
 

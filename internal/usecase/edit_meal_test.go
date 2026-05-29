@@ -130,6 +130,13 @@ func TestEditMealRunAnalysisWithRetryDeletedMealSkipsFailureBroadcast(t *testing
 
 	uc := NewEditMeal(
 		stubMealRepository{
+			getByIDFn: func(ctx context.Context, mealID int64) (domain.Meal, error) {
+				return domain.Meal{
+					ID:             mealID,
+					DishName:       "Tra sua",
+					AnalysisStatus: domain.AnalysisStatusProcessing,
+				}, nil
+			},
 			updateAnalysisStatusFn: func(ctx context.Context, mealID int64, status string) error {
 				return domain.ErrMealNotFound
 			},

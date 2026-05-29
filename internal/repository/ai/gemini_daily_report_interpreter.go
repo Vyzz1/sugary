@@ -21,6 +21,10 @@ type GeminiDailyReportInterpreter struct {
 	client *http.Client
 }
 
+const (
+	dailyReportGeminiMaxAttempts = 5
+)
+
 func NewGeminiDailyReportInterpreter(apiKey string, model string) GeminiDailyReportInterpreter {
 	model = strings.TrimSpace(model)
 	if model == "" {
@@ -59,28 +63,67 @@ func (a GeminiDailyReportInterpreter) GenerateInsights(ctx context.Context, inpu
 	}
 
 	url := fmt.Sprintf(geminiGenerateAPIURL, a.model, a.apiKey)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
-	if err != nil {
-		return domain.DailyReportAIInsights{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	var raw []byte
+	for attempt := 0; attempt < dailyReportGeminiMaxAttempts; attempt++ {
+		if attempt > 0 {
+			backoff := dailyReportRetryBackoff(attempt)
+			time.Sleep(backoff)
+		}
 
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return domain.DailyReportAIInsights{}, err
-	}
-	defer resp.Body.Close()
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+		if err != nil {
+			return domain.DailyReportAIInsights{}, err
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return domain.DailyReportAIInsights{}, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		attemptStartedAt := time.Now()
+		resp, err := a.client.Do(req)
+		if err != nil {
+			if attempt < dailyReportGeminiMaxAttempts-1 {
+				zap.L().Warn("gemini_daily_report_retry",
+					zap.Int("attempt", attempt+1),
+					zap.String("model", a.model),
+					zap.Int64("latency_ms", time.Since(attemptStartedAt).Milliseconds()),
+					zap.Error(err),
+				)
+				continue
+			}
+			return domain.DailyReportAIInsights{}, err
+		}
+
+		raw, err = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			if attempt < dailyReportGeminiMaxAttempts-1 {
+				zap.L().Warn("gemini_daily_report_retry",
+					zap.Int("attempt", attempt+1),
+					zap.String("model", a.model),
+					zap.Int64("latency_ms", time.Since(attemptStartedAt).Milliseconds()),
+					zap.Error(err),
+				)
+				continue
+			}
+			return domain.DailyReportAIInsights{}, err
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			break
+		}
+
 		zap.L().Warn("gemini_daily_report_failed",
 			zap.Int("status", resp.StatusCode),
 			zap.String("model", a.model),
-			zap.Int64("latency_ms", time.Since(start).Milliseconds()),
+			zap.Int("attempt", attempt+1),
+			zap.Int64("latency_ms", time.Since(attemptStartedAt).Milliseconds()),
 		)
+		if attempt < dailyReportGeminiMaxAttempts-1 && isRetryableGeminiStatus(resp.StatusCode) {
+			zap.L().Warn("gemini_daily_report_retry",
+				zap.Int("attempt", attempt+1),
+				zap.Int("status", resp.StatusCode),
+				zap.String("model", a.model),
+			)
+			continue
+		}
+
 		return domain.DailyReportAIInsights{}, fmt.Errorf("gemini request failed: status=%d body=%s", resp.StatusCode, string(raw))
 	}
 
@@ -107,6 +150,21 @@ func (a GeminiDailyReportInterpreter) GenerateInsights(ctx context.Context, inpu
 	)
 
 	return insights, nil
+}
+
+func dailyReportRetryBackoff(attempt int) time.Duration {
+	switch attempt {
+	case 1:
+		return time.Second
+	case 2:
+		return 3 * time.Second
+	default:
+		return 8 * time.Second
+	}
+}
+
+func isRetryableGeminiStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable || status >= 500
 }
 
 func buildDailyReportPrompt(input domain.GenerateDailyReportSummaryInput) string {

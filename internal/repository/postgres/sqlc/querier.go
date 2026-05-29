@@ -17,6 +17,8 @@ type Querier interface {
 	GetMealByID(ctx context.Context, id int64) (Meal, error)
 	ListMealsByDay(ctx context.Context, arg ListMealsByDayParams) ([]Meal, error)
 	ListRecentDistinctMeals(ctx context.Context, arg ListRecentDistinctMealsParams) ([]ListRecentDistinctMealsRow, error)
+	ListRetryableFailedMeals(ctx context.Context, arg ListRetryableFailedMealsParams) ([]Meal, error)
+	RetryFailedMealAnalysisByID(ctx context.Context, id int64) (Meal, error)
 	SoftDeleteMealByID(ctx context.Context, id int64) (int64, error)
 	UpdateMealAnalysisByID(ctx context.Context, arg UpdateMealAnalysisByIDParams) (Meal, error)
 	// Called by the async goroutine after AI analysis succeeds.

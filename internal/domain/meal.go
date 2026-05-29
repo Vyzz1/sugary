@@ -22,15 +22,17 @@ const (
 )
 
 type Meal struct {
-	ID             int64      `json:"id"`
-	DishName       string     `json:"dish_name"`
-	MealType       string     `json:"meal_type"`
-	ImageURL       *string    `json:"image_url,omitempty"`
-	RecordedAt     time.Time  `json:"recorded_at"`
-	AnalysisStatus string     `json:"analysis_status"`
-	IsUserEdited   bool       `json:"is_user_edited"`
-	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
-	Analysis       *Nutrition `json:"analysis,omitempty"`
+	ID                    int64      `json:"id"`
+	DishName              string     `json:"dish_name"`
+	MealType              string     `json:"meal_type"`
+	ImageURL              *string    `json:"image_url,omitempty"`
+	RecordedAt            time.Time  `json:"recorded_at"`
+	AnalysisStatus        string     `json:"analysis_status"`
+	IsUserEdited          bool       `json:"is_user_edited"`
+	AnalysisRetryCount    int32      `json:"analysis_retry_count"`
+	LastAnalysisAttemptAt *time.Time `json:"last_analysis_attempt_at,omitempty"`
+	DeletedAt             *time.Time `json:"deleted_at,omitempty"`
+	Analysis              *Nutrition `json:"analysis,omitempty"`
 }
 
 type Nutrition struct {
@@ -75,6 +77,12 @@ type MealsByDayFilter struct {
 	Sort string
 }
 
+type RetryableFailedMealsFilter struct {
+	Before        time.Time
+	Limit         int32
+	MaxRetryCount int32
+}
+
 type MealRepository interface {
 	Create(ctx context.Context, meal Meal) (Meal, error)
 	ListByDay(ctx context.Context, filter MealsByDayFilter) ([]Meal, error)
@@ -87,6 +95,8 @@ type MealRepository interface {
 	// UpdateAnalysisResult sets nutrition fields + marks analysis_status = 'completed'.
 	// Called by the async goroutine after AI analysis succeeds.
 	UpdateAnalysisResult(ctx context.Context, mealID int64, nutrition Nutrition) (Meal, error)
+	ListRetryableFailed(ctx context.Context, filter RetryableFailedMealsFilter) ([]Meal, error)
+	RetryFailedAnalysis(ctx context.Context, mealID int64) (Meal, error)
 	// UpdateAnalysisStatus updates only the analysis_status column.
 	// Called by the async goroutine when all retries are exhausted (status = 'failed').
 	UpdateAnalysisStatus(ctx context.Context, mealID int64, status string) error

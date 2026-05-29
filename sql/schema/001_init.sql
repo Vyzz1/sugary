@@ -14,6 +14,8 @@ CREATE TABLE meals (
     risk_level TEXT NOT NULL,
     analysis_notes TEXT NOT NULL DEFAULT '',
     is_user_edited BOOLEAN NOT NULL DEFAULT FALSE,
+    analysis_retry_count INTEGER NOT NULL DEFAULT 0,
+    last_analysis_attempt_at TIMESTAMPTZ,
     deleted_at TIMESTAMPTZ
 );
 
@@ -24,5 +26,7 @@ CREATE TABLE daily_reports (
     average_sugar_grams DOUBLE PRECISION NOT NULL,
     highest_risk_level TEXT NOT NULL,
     summary TEXT NOT NULL,
-    ai_insights JSONB NOT NULL DEFAULT '{}'::jsonb
+    ai_insights JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ai_insight_source TEXT NOT NULL DEFAULT 'fallback',
+    ai_insight_status TEXT NOT NULL DEFAULT 'fallback'
 );

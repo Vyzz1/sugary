@@ -12,6 +12,8 @@ type DailyReport struct {
 	AverageSugarGrams float64               `json:"average_sugar_grams"`
 	HighestRiskLevel  string                `json:"highest_risk_level"`
 	Summary           string                `json:"summary"`
+	AIInsightSource   string                `json:"ai_insight_source"`
+	AIInsightStatus   string                `json:"ai_insight_status"`
 	AIInsights        DailyReportAIInsights `json:"ai_insights"`
 }
 

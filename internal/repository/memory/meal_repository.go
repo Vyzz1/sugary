@@ -155,6 +155,8 @@ func (r *MealRepository) UpdateForReanalysis(ctx context.Context, meal domain.Me
 			r.meals[i].RecordedAt = meal.RecordedAt
 			r.meals[i].AnalysisStatus = domain.AnalysisStatusProcessing
 			r.meals[i].IsUserEdited = false
+			r.meals[i].AnalysisRetryCount = 0
+			r.meals[i].LastAnalysisAttemptAt = nil
 			r.meals[i].Analysis = nil
 			return r.meals[i], nil
 		}
@@ -180,6 +182,32 @@ func (r *MealRepository) UpdateWithAnalysis(ctx context.Context, meal domain.Mea
 		}
 	}
 	return domain.Meal{}, domain.ErrMealNotFound
+}
+
+func (r *MealRepository) ListRetryableFailed(ctx context.Context, filter domain.RetryableFailedMealsFilter) ([]domain.Meal, error) {
+	_ = ctx
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]domain.Meal, 0)
+	for _, meal := range r.meals {
+		if meal.DeletedAt != nil || meal.AnalysisStatus != domain.AnalysisStatusFailed {
+			continue
+		}
+		if meal.AnalysisRetryCount >= filter.MaxRetryCount {
+			continue
+		}
+		if meal.LastAnalysisAttemptAt != nil && meal.LastAnalysisAttemptAt.After(filter.Before) {
+			continue
+		}
+		result = append(result, meal)
+		if filter.Limit > 0 && int32(len(result)) >= filter.Limit {
+			break
+		}
+	}
+
+	return result, nil
 }
 
 func (r *MealRepository) UpdateAnalysis(ctx context.Context, mealID int64, nutrition domain.Nutrition) (domain.Meal, error) {
@@ -233,6 +261,22 @@ func (r *MealRepository) UpdateAnalysisResult(ctx context.Context, mealID int64,
 	return domain.Meal{}, domain.ErrMealNotFound
 }
 
+func (r *MealRepository) RetryFailedAnalysis(ctx context.Context, mealID int64) (domain.Meal, error) {
+	_ = ctx
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i := range r.meals {
+		if r.meals[i].ID == mealID && r.meals[i].DeletedAt == nil && r.meals[i].AnalysisStatus == domain.AnalysisStatusFailed {
+			r.meals[i].AnalysisStatus = domain.AnalysisStatusProcessing
+			return r.meals[i], nil
+		}
+	}
+
+	return domain.Meal{}, domain.ErrMealNotFound
+}
+
 func (r *MealRepository) UpdateAnalysisStatus(ctx context.Context, mealID int64, status string) error {
 	_ = ctx
 
@@ -244,6 +288,11 @@ func (r *MealRepository) UpdateAnalysisStatus(ctx context.Context, mealID int64,
 			r.meals[i].AnalysisStatus = status
 			if status != domain.AnalysisStatusCompleted {
 				r.meals[i].Analysis = nil
+			}
+			if status == domain.AnalysisStatusFailed {
+				now := time.Now().UTC()
+				r.meals[i].AnalysisRetryCount++
+				r.meals[i].LastAnalysisAttemptAt = &now
 			}
 			return nil
 		}

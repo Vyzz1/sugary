@@ -58,7 +58,7 @@ INSERT INTO meals (
     $11,
     $12
 )
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 `
 
 type CreateMealParams struct {
@@ -106,13 +106,15 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 		&i.RiskLevel,
 		&i.AnalysisNotes,
 		&i.IsUserEdited,
+		&i.AnalysisRetryCount,
+		&i.LastAnalysisAttemptAt,
 		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getMealByID = `-- name: GetMealByID :one
-SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 FROM meals
 WHERE id = $1
   AND deleted_at IS NULL
@@ -135,13 +137,15 @@ func (q *Queries) GetMealByID(ctx context.Context, id int64) (Meal, error) {
 		&i.RiskLevel,
 		&i.AnalysisNotes,
 		&i.IsUserEdited,
+		&i.AnalysisRetryCount,
+		&i.LastAnalysisAttemptAt,
 		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const listMealsByDay = `-- name: ListMealsByDay :many
-SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 FROM meals
 WHERE recorded_at >= $1
   AND recorded_at < $2
@@ -184,6 +188,8 @@ func (q *Queries) ListMealsByDay(ctx context.Context, arg ListMealsByDayParams) 
 			&i.RiskLevel,
 			&i.AnalysisNotes,
 			&i.IsUserEdited,
+			&i.AnalysisRetryCount,
+			&i.LastAnalysisAttemptAt,
 			&i.DeletedAt,
 		); err != nil {
 			return nil, err
@@ -212,13 +218,15 @@ WITH distinct_meals AS (
         risk_level,
         analysis_notes,
         is_user_edited,
+        analysis_retry_count,
+        last_analysis_attempt_at,
         deleted_at
     FROM meals
     WHERE deleted_at IS NULL
       AND ($4::text = '' OR unaccent(lower(dish_name)) LIKE '%' || unaccent(lower($4::text)) || '%')
     ORDER BY lower(dish_name), COALESCE(image_url, ''), recorded_at DESC, id DESC
 )
-SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 FROM distinct_meals
 ORDER BY
     CASE WHEN $1::text = 'created_asc' THEN recorded_at END ASC,
@@ -252,6 +260,8 @@ type ListRecentDistinctMealsRow struct {
 	RiskLevel             string             `json:"risk_level"`
 	AnalysisNotes         string             `json:"analysis_notes"`
 	IsUserEdited          bool               `json:"is_user_edited"`
+	AnalysisRetryCount    int32              `json:"analysis_retry_count"`
+	LastAnalysisAttemptAt pgtype.Timestamptz `json:"last_analysis_attempt_at"`
 	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
 }
 
@@ -283,6 +293,8 @@ func (q *Queries) ListRecentDistinctMeals(ctx context.Context, arg ListRecentDis
 			&i.RiskLevel,
 			&i.AnalysisNotes,
 			&i.IsUserEdited,
+			&i.AnalysisRetryCount,
+			&i.LastAnalysisAttemptAt,
 			&i.DeletedAt,
 		); err != nil {
 			return nil, err
@@ -293,6 +305,97 @@ func (q *Queries) ListRecentDistinctMeals(ctx context.Context, arg ListRecentDis
 		return nil, err
 	}
 	return items, nil
+}
+
+const listRetryableFailedMeals = `-- name: ListRetryableFailedMeals :many
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
+FROM meals
+WHERE analysis_status = 'failed'
+  AND deleted_at IS NULL
+  AND analysis_retry_count < $1
+  AND (
+    last_analysis_attempt_at IS NULL
+    OR last_analysis_attempt_at <= $2
+  )
+ORDER BY last_analysis_attempt_at ASC NULLS FIRST, id ASC
+LIMIT $3
+`
+
+type ListRetryableFailedMealsParams struct {
+	MaxRetryCount int32              `json:"max_retry_count"`
+	BeforeTime    pgtype.Timestamptz `json:"before_time"`
+	LimitCount    int32              `json:"limit_count"`
+}
+
+func (q *Queries) ListRetryableFailedMeals(ctx context.Context, arg ListRetryableFailedMealsParams) ([]Meal, error) {
+	rows, err := q.db.Query(ctx, listRetryableFailedMeals, arg.MaxRetryCount, arg.BeforeTime, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Meal
+	for rows.Next() {
+		var i Meal
+		if err := rows.Scan(
+			&i.ID,
+			&i.DishName,
+			&i.MealType,
+			&i.ImageUrl,
+			&i.RecordedAt,
+			&i.AnalysisStatus,
+			&i.EstimatedSugarGrams,
+			&i.EstimatedCarbsGrams,
+			&i.EstimatedProteinGrams,
+			&i.EstimatedCalories,
+			&i.RiskLevel,
+			&i.AnalysisNotes,
+			&i.IsUserEdited,
+			&i.AnalysisRetryCount,
+			&i.LastAnalysisAttemptAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const retryFailedMealAnalysisByID = `-- name: RetryFailedMealAnalysisByID :one
+UPDATE meals
+SET
+    analysis_status = 'processing'
+WHERE id = $1
+  AND analysis_status = 'failed'
+  AND deleted_at IS NULL
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
+`
+
+func (q *Queries) RetryFailedMealAnalysisByID(ctx context.Context, id int64) (Meal, error) {
+	row := q.db.QueryRow(ctx, retryFailedMealAnalysisByID, id)
+	var i Meal
+	err := row.Scan(
+		&i.ID,
+		&i.DishName,
+		&i.MealType,
+		&i.ImageUrl,
+		&i.RecordedAt,
+		&i.AnalysisStatus,
+		&i.EstimatedSugarGrams,
+		&i.EstimatedCarbsGrams,
+		&i.EstimatedProteinGrams,
+		&i.EstimatedCalories,
+		&i.RiskLevel,
+		&i.AnalysisNotes,
+		&i.IsUserEdited,
+		&i.AnalysisRetryCount,
+		&i.LastAnalysisAttemptAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const softDeleteMealByID = `-- name: SoftDeleteMealByID :execrows
@@ -320,7 +423,7 @@ SET
     is_user_edited = TRUE
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 `
 
 type UpdateMealAnalysisByIDParams struct {
@@ -354,6 +457,8 @@ func (q *Queries) UpdateMealAnalysisByID(ctx context.Context, arg UpdateMealAnal
 		&i.RiskLevel,
 		&i.AnalysisNotes,
 		&i.IsUserEdited,
+		&i.AnalysisRetryCount,
+		&i.LastAnalysisAttemptAt,
 		&i.DeletedAt,
 	)
 	return i, err
@@ -372,7 +477,7 @@ SET
     is_user_edited         = FALSE
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 `
 
 type UpdateMealAnalysisResultByIDParams struct {
@@ -412,6 +517,8 @@ func (q *Queries) UpdateMealAnalysisResultByID(ctx context.Context, arg UpdateMe
 		&i.RiskLevel,
 		&i.AnalysisNotes,
 		&i.IsUserEdited,
+		&i.AnalysisRetryCount,
+		&i.LastAnalysisAttemptAt,
 		&i.DeletedAt,
 	)
 	return i, err
@@ -419,7 +526,16 @@ func (q *Queries) UpdateMealAnalysisResultByID(ctx context.Context, arg UpdateMe
 
 const updateMealAnalysisStatusByID = `-- name: UpdateMealAnalysisStatusByID :execrows
 UPDATE meals
-SET analysis_status = $2
+SET
+    analysis_status = $2,
+    analysis_retry_count = CASE
+        WHEN $2 = 'failed' THEN analysis_retry_count + 1
+        ELSE analysis_retry_count
+    END,
+    last_analysis_attempt_at = CASE
+        WHEN $2 = 'failed' THEN NOW()
+        ELSE last_analysis_attempt_at
+    END
 WHERE id = $1
   AND deleted_at IS NULL
 `
@@ -446,10 +562,12 @@ SET
     image_url = $4,
     recorded_at = $5,
     analysis_status = 'processing',
-    is_user_edited = FALSE
+    is_user_edited = FALSE,
+    analysis_retry_count = 0,
+    last_analysis_attempt_at = NULL
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 `
 
 type UpdateMealForReanalysisByIDParams struct {
@@ -483,6 +601,8 @@ func (q *Queries) UpdateMealForReanalysisByID(ctx context.Context, arg UpdateMea
 		&i.RiskLevel,
 		&i.AnalysisNotes,
 		&i.IsUserEdited,
+		&i.AnalysisRetryCount,
+		&i.LastAnalysisAttemptAt,
 		&i.DeletedAt,
 	)
 	return i, err
@@ -495,7 +615,7 @@ SET
     recorded_at = $3
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 `
 
 type UpdateMealMetaByIDParams struct {
@@ -521,6 +641,8 @@ func (q *Queries) UpdateMealMetaByID(ctx context.Context, arg UpdateMealMetaByID
 		&i.RiskLevel,
 		&i.AnalysisNotes,
 		&i.IsUserEdited,
+		&i.AnalysisRetryCount,
+		&i.LastAnalysisAttemptAt,
 		&i.DeletedAt,
 	)
 	return i, err
@@ -543,7 +665,7 @@ SET
     is_user_edited = FALSE
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, deleted_at
+RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
 `
 
 type UpdateMealWithAnalysisByIDParams struct {
@@ -589,6 +711,8 @@ func (q *Queries) UpdateMealWithAnalysisByID(ctx context.Context, arg UpdateMeal
 		&i.RiskLevel,
 		&i.AnalysisNotes,
 		&i.IsUserEdited,
+		&i.AnalysisRetryCount,
+		&i.LastAnalysisAttemptAt,
 		&i.DeletedAt,
 	)
 	return i, err

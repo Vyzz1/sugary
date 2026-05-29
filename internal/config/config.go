@@ -57,9 +57,13 @@ type RedisConfig struct {
 }
 
 type CronConfig struct {
-	Enabled               bool
-	DailyReportExpression string
-	Timezone              string
+	Enabled                          bool
+	DailyReportExpression            string
+	Timezone                         string
+	MealAnalysisRetryExpression      string
+	MealAnalysisRetryMaxAttempts     int32
+	MealAnalysisRetryCooldownMinutes int
+	MealAnalysisRetryBatchSize       int32
 }
 
 func Load() Config {
@@ -100,9 +104,13 @@ func Load() Config {
 			DB:       getEnv("REDIS_DB", "0"),
 		},
 		Cron: CronConfig{
-			Enabled:               getEnvBool("CRON_ENABLED", false),
-			DailyReportExpression: getEnv("CRON_DAILY_REPORT_EXPRESSION", "5 0 * * *"),
-			Timezone:              getEnv("CRON_TIMEZONE", timeutil.DefaultTimezone),
+			Enabled:                          getEnvBool("CRON_ENABLED", false),
+			DailyReportExpression:            getEnv("CRON_DAILY_REPORT_EXPRESSION", "5 0 * * *"),
+			Timezone:                         getEnv("CRON_TIMEZONE", timeutil.DefaultTimezone),
+			MealAnalysisRetryExpression:      getEnv("CRON_MEAL_ANALYSIS_RETRY_EXPRESSION", "*/15 * * * *"),
+			MealAnalysisRetryMaxAttempts:     int32(getEnvInt("CRON_MEAL_ANALYSIS_RETRY_MAX_ATTEMPTS", 5)),
+			MealAnalysisRetryCooldownMinutes: getEnvInt("CRON_MEAL_ANALYSIS_RETRY_COOLDOWN_MINUTES", 15),
+			MealAnalysisRetryBatchSize:       int32(getEnvInt("CRON_MEAL_ANALYSIS_RETRY_BATCH_SIZE", 25)),
 		},
 	}
 }
@@ -123,6 +131,20 @@ func getEnvBool(key string, fallback bool) bool {
 	}
 
 	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+
+	return parsed
+}
+
+func getEnvInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		return fallback
 	}

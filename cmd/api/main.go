@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -53,6 +54,13 @@ func main() {
 	deleteMeal := usecase.NewDeleteMeal(mealRepository)
 	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository, dailyReportInterpreter).WithPublisher(wsHub)
 	getDailyReport := usecase.NewGetDailyReport(dailyReportRepository)
+	retryFailedMealAnalyses := usecase.NewRetryFailedMealAnalyses(
+		mealRepository,
+		nutritionAnalyzer,
+		cfg.Cron.MealAnalysisRetryMaxAttempts,
+		time.Duration(cfg.Cron.MealAnalysisRetryCooldownMinutes)*time.Minute,
+		cfg.Cron.MealAnalysisRetryBatchSize,
+	).WithPublisher(wsHub)
 
 	if cfg.Cron.Enabled {
 		scheduler := cronplatform.New()
@@ -68,6 +76,13 @@ func main() {
 			logger.Error("cron_job_register_failed", zap.Error(err))
 			return
 		}
+		if err := scheduler.Register(usecase.ScheduleSpec{
+			Expression: cfg.Cron.MealAnalysisRetryExpression,
+			Timezone:   cfg.Cron.Timezone,
+		}, usecase.NewRetryFailedMealAnalysesJob(retryFailedMealAnalyses)); err != nil {
+			logger.Error("cron_meal_analysis_retry_register_failed", zap.Error(err))
+			return
+		}
 		if err := scheduler.Start(); err != nil {
 			logger.Error("cron_scheduler_start_failed", zap.Error(err))
 			return
@@ -76,6 +91,7 @@ func main() {
 		logger.Info("cron_scheduler_started",
 			zap.String("daily_report_expression", cfg.Cron.DailyReportExpression),
 			zap.String("timezone", cfg.Cron.Timezone),
+			zap.String("meal_analysis_retry_expression", cfg.Cron.MealAnalysisRetryExpression),
 		)
 	}
 

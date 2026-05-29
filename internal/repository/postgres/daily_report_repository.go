@@ -38,6 +38,8 @@ func (r DailyReportRepository) Save(ctx context.Context, report domain.DailyRepo
 		HighestRiskLevel:  report.HighestRiskLevel,
 		Summary:           report.Summary,
 		AiInsights:        insightsJSON,
+		AiInsightSource:   report.AIInsightSource,
+		AiInsightStatus:   report.AIInsightStatus,
 	})
 }
 
@@ -57,6 +59,8 @@ func (r DailyReportRepository) GetByDay(ctx context.Context, day time.Time) (dom
 		AverageSugarGrams: row.AverageSugarGrams,
 		HighestRiskLevel:  row.HighestRiskLevel,
 		Summary:           row.Summary,
+		AIInsightSource:   row.AiInsightSource,
+		AIInsightStatus:   row.AiInsightStatus,
 		AIInsights:        domain.DailyReportAIInsights{},
 	}
 
@@ -72,6 +76,12 @@ func (r DailyReportRepository) GetByDay(ctx context.Context, day time.Time) (dom
 			Recommendations: []string{},
 			PatternSignals:  []string{},
 		}
+	}
+	if report.AIInsightSource == "" {
+		report.AIInsightSource = "fallback"
+	}
+	if report.AIInsightStatus == "" {
+		report.AIInsightStatus = "fallback"
 	}
 
 	return report, true, nil

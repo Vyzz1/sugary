@@ -122,6 +122,12 @@ func TestCompileDailyReportExecute(t *testing.T) {
 	if report.AIInsights.Summary != "AI summary" {
 		t.Fatalf("expected AI insights summary, got %q", report.AIInsights.Summary)
 	}
+	if report.AIInsightSource != "gemini" {
+		t.Fatalf("expected ai_insight_source gemini, got %q", report.AIInsightSource)
+	}
+	if report.AIInsightStatus != "completed" {
+		t.Fatalf("expected ai_insight_status completed, got %q", report.AIInsightStatus)
+	}
 	expectedStoredDate := time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC)
 	if !report.Date.Equal(expectedStoredDate) {
 		t.Fatalf("expected stored report date %s, got %s", expectedStoredDate, report.Date)
@@ -189,6 +195,12 @@ func TestCompileDailyReportExecuteSkipsUnanalyzedMealsInAverage(t *testing.T) {
 	if report.AIInsights.Summary == "" {
 		t.Fatalf("expected fallback ai insights summary")
 	}
+	if report.AIInsightSource != "fallback" {
+		t.Fatalf("expected ai_insight_source fallback, got %q", report.AIInsightSource)
+	}
+	if report.AIInsightStatus != "fallback" {
+		t.Fatalf("expected ai_insight_status fallback, got %q", report.AIInsightStatus)
+	}
 }
 
 func TestCompileDailyReportExecuteNoAnalyzedMeals(t *testing.T) {
@@ -232,6 +244,12 @@ func TestCompileDailyReportExecuteNoAnalyzedMeals(t *testing.T) {
 	}
 	if report.AIInsights.Summary == "" {
 		t.Fatalf("expected fallback ai insights summary")
+	}
+	if report.AIInsightSource != "fallback" {
+		t.Fatalf("expected ai_insight_source fallback, got %q", report.AIInsightSource)
+	}
+	if report.AIInsightStatus != "fallback" {
+		t.Fatalf("expected ai_insight_status fallback, got %q", report.AIInsightStatus)
 	}
 }
 

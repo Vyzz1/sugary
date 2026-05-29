@@ -51,6 +51,10 @@ REDIS_PORT=6379
 CRON_ENABLED=false
 CRON_DAILY_REPORT_EXPRESSION="5 0 * * *"
 CRON_TIMEZONE=Asia/Ho_Chi_Minh
+CRON_MEAL_ANALYSIS_RETRY_EXPRESSION="*/15 * * * *"
+CRON_MEAL_ANALYSIS_RETRY_MAX_ATTEMPTS=5
+CRON_MEAL_ANALYSIS_RETRY_COOLDOWN_MINUTES=15
+CRON_MEAL_ANALYSIS_RETRY_BATCH_SIZE=25
 ```
 
 ## Local infrastructure
@@ -253,6 +257,10 @@ Errors use:
 - `CRON_ENABLED`: enables the built-in in-process scheduler for daily report generation
 - `CRON_DAILY_REPORT_EXPRESSION`: cron expression for the daily report job, default `5 0 * * *`
 - `CRON_TIMEZONE`: timezone used by the built-in scheduler, default `Asia/Ho_Chi_Minh`
+- `CRON_MEAL_ANALYSIS_RETRY_EXPRESSION`: cron expression for retrying failed meal analyses, default every 15 minutes
+- `CRON_MEAL_ANALYSIS_RETRY_MAX_ATTEMPTS`: max failed analysis waves before the retry cron stops picking a meal
+- `CRON_MEAL_ANALYSIS_RETRY_COOLDOWN_MINUTES`: minimum wait time after a failed analysis before cron retries it
+- `CRON_MEAL_ANALYSIS_RETRY_BATCH_SIZE`: max failed meals retried in one cron run
 - `PORT`: runtime port used by platforms like Render
 - `LOGIN_USER` / `LOGIN_PASSWORD`: shared login credentials for `/login`
 - `JWT_SECRET`: signing secret for issued tokens
@@ -267,3 +275,5 @@ When `CRON_ENABLED=true`, the API process starts an internal scheduler backed by
 - the default schedule is `00:05` every day in `Asia/Ho_Chi_Minh`
 - the job always compiles the report for the previous local day
 - manual triggering via `POST /api/jobs/daily-report` is still available for re-runs and backfills
+- a second scheduled job retries failed meal analyses using the same async AI runner path
+- failed analyses remain eligible while `analysis_retry_count < CRON_MEAL_ANALYSIS_RETRY_MAX_ATTEMPTS`
