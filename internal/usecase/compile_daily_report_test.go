@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -28,6 +29,17 @@ func (s stubDailyReportRepository) GetByDay(ctx context.Context, day time.Time) 
 
 func (s stubDailyReportInterpreter) GenerateInsights(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error) {
 	return s.generateInsightsFn(ctx, input)
+}
+
+type capturingDailyReportPublisher struct {
+	ch chan []byte
+}
+
+func (p *capturingDailyReportPublisher) Broadcast(msg []byte) {
+	select {
+	case p.ch <- msg:
+	default:
+	}
 }
 
 func TestCompileDailyReportExecute(t *testing.T) {
@@ -220,5 +232,152 @@ func TestCompileDailyReportExecuteNoAnalyzedMeals(t *testing.T) {
 	}
 	if report.AIInsights.Summary == "" {
 		t.Fatalf("expected fallback ai insights summary")
+	}
+}
+
+func TestCompileDailyReportExecuteBroadcastsAfterSuccessfulSave(t *testing.T) {
+	t.Parallel()
+
+	broadcastCh := make(chan []byte, 1)
+	saveCalled := false
+
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return []domain.Meal{
+					{
+						DishName: "Milk tea",
+						Analysis: &domain.Nutrition{
+							EstimatedSugarGrams: 35,
+							RiskLevel:           "high",
+						},
+					},
+				}, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error {
+				saveCalled = true
+				return nil
+			},
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{}, false, nil
+			},
+		},
+		nil,
+	).WithPublisher(&capturingDailyReportPublisher{ch: broadcastCh})
+
+	_, err := uc.Execute(context.Background(), time.Date(2026, 5, 21, 15, 0, 0, 0, time.FixedZone("ICT", 7*60*60)))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if !saveCalled {
+		t.Fatal("expected Save to be called before broadcast")
+	}
+
+	select {
+	case msg := <-broadcastCh:
+		var push dailyReportPush
+		if err := json.Unmarshal(msg, &push); err != nil {
+			t.Fatalf("expected valid JSON broadcast, got %v", err)
+		}
+		if push.Type != "daily_report" {
+			t.Fatalf("expected type daily_report, got %q", push.Type)
+		}
+		if push.Status != "completed" {
+			t.Fatalf("expected status completed, got %q", push.Status)
+		}
+		if push.Data == nil {
+			t.Fatal("expected report payload in broadcast")
+		}
+	default:
+		t.Fatal("expected broadcast after successful save")
+	}
+}
+
+func TestCompileDailyReportExecuteDoesNotBroadcastWhenSaveFails(t *testing.T) {
+	t.Parallel()
+
+	broadcastCh := make(chan []byte, 1)
+
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return []domain.Meal{
+					{
+						DishName: "Milk tea",
+						Analysis: &domain.Nutrition{
+							EstimatedSugarGrams: 35,
+							RiskLevel:           "high",
+						},
+					},
+				}, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error {
+				return errors.New("save failed")
+			},
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{}, false, nil
+			},
+		},
+		nil,
+	).WithPublisher(&capturingDailyReportPublisher{ch: broadcastCh})
+
+	_, err := uc.Execute(context.Background(), time.Date(2026, 5, 21, 15, 0, 0, 0, time.FixedZone("ICT", 7*60*60)))
+	if err == nil {
+		t.Fatal("expected save error")
+	}
+
+	select {
+	case msg := <-broadcastCh:
+		t.Fatalf("expected no broadcast when save fails, got %s", string(msg))
+	default:
+	}
+}
+
+func TestCompileDailyReportExecuteNoMealsBroadcastsAfterSuccessfulSave(t *testing.T) {
+	t.Parallel()
+
+	broadcastCh := make(chan []byte, 1)
+
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return []domain.Meal{}, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error {
+				return nil
+			},
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{}, false, nil
+			},
+		},
+		nil,
+	).WithPublisher(&capturingDailyReportPublisher{ch: broadcastCh})
+
+	_, err := uc.Execute(context.Background(), time.Date(2026, 5, 21, 15, 0, 0, 0, time.FixedZone("ICT", 7*60*60)))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	select {
+	case msg := <-broadcastCh:
+		var push dailyReportPush
+		if err := json.Unmarshal(msg, &push); err != nil {
+			t.Fatalf("expected valid JSON broadcast, got %v", err)
+		}
+		if push.Data == nil {
+			t.Fatal("expected report payload in no-meals broadcast")
+		}
+		if push.Data.MealCount != 0 {
+			t.Fatalf("expected meal_count 0, got %d", push.Data.MealCount)
+		}
+	default:
+		t.Fatal("expected broadcast for no-meals report")
 	}
 }

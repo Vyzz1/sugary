@@ -48,6 +48,9 @@ POSTGRES_PASSWORD=postgres
 POSTGRES_DB=sugary
 REDIS_HOST=localhost
 REDIS_PORT=6379
+CRON_ENABLED=false
+CRON_DAILY_REPORT_EXPRESSION="5 0 * * *"
+CRON_TIMEZONE=Asia/Ho_Chi_Minh
 ```
 
 ## Local infrastructure
@@ -199,6 +202,7 @@ Login success response example:
 `GET /api/reports/daily` and `POST /api/jobs/daily-report`:
 - accept optional `X-Timezone` header to interpret `date` and `today` using a client timezone.
 - if the header is missing, backend falls back to `Asia/Ho_Chi_Minh`.
+- manual trigger remains available even if the built-in cron scheduler is enabled.
 
 Validation errors return structured codes, for example:
 
@@ -246,8 +250,20 @@ Errors use:
 - `CORS_ALLOW_ORIGINS`: comma-separated allowed origins for browser requests, defaults to `*`
 - `POSTGRES_*`: connection settings for the primary database
 - `REDIS_*`: connection settings for cache and job-related state
+- `CRON_ENABLED`: enables the built-in in-process scheduler for daily report generation
+- `CRON_DAILY_REPORT_EXPRESSION`: cron expression for the daily report job, default `5 0 * * *`
+- `CRON_TIMEZONE`: timezone used by the built-in scheduler, default `Asia/Ho_Chi_Minh`
 - `PORT`: runtime port used by platforms like Render
 - `LOGIN_USER` / `LOGIN_PASSWORD`: shared login credentials for `/login`
 - `JWT_SECRET`: signing secret for issued tokens
 - `JWT_EXPIRES_IN`: token lifetime, for example `24h`
 - `LOG_LEVEL`: `debug|info|warn|error` for structured JSON logs
+
+## Built-In Cron
+
+When `CRON_ENABLED=true`, the API process starts an internal scheduler backed by `robfig/cron/v3`.
+
+- the scheduled job reuses the same `CompileDailyReport` use case as `POST /api/jobs/daily-report`
+- the default schedule is `00:05` every day in `Asia/Ho_Chi_Minh`
+- the job always compiles the report for the previous local day
+- manual triggering via `POST /api/jobs/daily-report` is still available for re-runs and backfills

@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
+
+	"sugary/internal/platform/timeutil"
 )
 
 const defaultPort = "8080"
@@ -21,6 +24,7 @@ type Config struct {
 	Upload           UploadConfig
 	Postgres         PostgresConfig
 	Redis            RedisConfig
+	Cron             CronConfig
 }
 
 type AuthConfig struct {
@@ -50,6 +54,12 @@ type RedisConfig struct {
 	Port     string
 	Password string
 	DB       string
+}
+
+type CronConfig struct {
+	Enabled               bool
+	DailyReportExpression string
+	Timezone              string
 }
 
 func Load() Config {
@@ -89,6 +99,11 @@ func Load() Config {
 			Password: os.Getenv("REDIS_PASSWORD"),
 			DB:       getEnv("REDIS_DB", "0"),
 		},
+		Cron: CronConfig{
+			Enabled:               getEnvBool("CRON_ENABLED", false),
+			DailyReportExpression: getEnv("CRON_DAILY_REPORT_EXPRESSION", "5 0 * * *"),
+			Timezone:              getEnv("CRON_TIMEZONE", timeutil.DefaultTimezone),
+		},
 	}
 }
 
@@ -99,6 +114,20 @@ func getEnv(key string, fallback string) string {
 	}
 
 	return value
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+
+	return parsed
 }
 
 func (c PostgresConfig) DSN() string {

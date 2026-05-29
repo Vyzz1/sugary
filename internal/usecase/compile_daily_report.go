@@ -2,18 +2,33 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"sugary/internal/domain"
 	"sugary/internal/platform/timeutil"
+
+	"go.uber.org/zap"
 )
+
+type DailyReportPublisher interface {
+	Broadcast(msg []byte)
+}
+
+type dailyReportPush struct {
+	Type   string              `json:"type"`
+	Status string              `json:"status"`
+	Data   *domain.DailyReport `json:"data,omitempty"`
+	Error  *analysisPushErr    `json:"error,omitempty"`
+}
 
 type CompileDailyReport struct {
 	mealRepository        domain.MealRepository
 	dailyReportRepository domain.DailyReportRepository
 	interpreter           domain.DailyReportInterpreter
+	publisher             DailyReportPublisher
 }
 
 func NewCompileDailyReport(
@@ -26,6 +41,43 @@ func NewCompileDailyReport(
 		dailyReportRepository: dailyReportRepository,
 		interpreter:           interpreter,
 	}
+}
+
+func (uc CompileDailyReport) WithPublisher(publisher DailyReportPublisher) CompileDailyReport {
+	uc.publisher = publisher
+	return uc
+}
+
+func (uc CompileDailyReport) broadcastReport(msg dailyReportPush) {
+	if uc.publisher == nil {
+		return
+	}
+
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		zap.L().Error("daily_report_push_marshal_failed",
+			zap.String("job_name", "daily_report"),
+			zap.Time("report_date", msg.Data.Date),
+			zap.Error(err),
+		)
+		return
+	}
+
+	uc.publisher.Broadcast(payload)
+}
+
+func (uc CompileDailyReport) saveAndBroadcast(ctx context.Context, report domain.DailyReport) error {
+	if err := uc.dailyReportRepository.Save(ctx, report); err != nil {
+		return err
+	}
+
+	uc.broadcastReport(dailyReportPush{
+		Type:   "daily_report",
+		Status: "completed",
+		Data:   &report,
+	})
+
+	return nil
 }
 
 func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain.DailyReport, error) {
@@ -51,7 +103,7 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 		report.HighestRiskLevel = "unknown"
 		report.Summary = fallbackDailyReportSummary(report, 0)
 		report.AIInsights = fallbackDailyReportAIInsights(report.Summary)
-		if err := uc.dailyReportRepository.Save(ctx, report); err != nil {
+		if err := uc.saveAndBroadcast(ctx, report); err != nil {
 			return domain.DailyReport{}, err
 		}
 		return report, nil
@@ -95,7 +147,7 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 		}
 	}
 
-	if err := uc.dailyReportRepository.Save(ctx, report); err != nil {
+	if err := uc.saveAndBroadcast(ctx, report); err != nil {
 		return domain.DailyReport{}, err
 	}
 

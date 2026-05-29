@@ -11,6 +11,7 @@ import (
 	"sugary/internal/delivery/http/handler"
 	"sugary/internal/platform/hub"
 	"sugary/internal/platform/logging"
+	cronplatform "sugary/internal/platform/scheduler/cron"
 	"sugary/internal/repository/ai"
 	"sugary/internal/repository/postgres"
 	"sugary/internal/repository/uploadproxy"
@@ -50,8 +51,33 @@ func main() {
 	editMealAnalysis := usecase.NewEditMealAnalysis(mealRepository)
 	editMeal := usecase.NewEditMeal(mealRepository, nutritionAnalyzer).WithPublisher(wsHub)
 	deleteMeal := usecase.NewDeleteMeal(mealRepository)
-	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository, dailyReportInterpreter)
+	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository, dailyReportInterpreter).WithPublisher(wsHub)
 	getDailyReport := usecase.NewGetDailyReport(dailyReportRepository)
+
+	if cfg.Cron.Enabled {
+		scheduler := cronplatform.New()
+		dailyReportJob, err := usecase.NewDailyReportJob(compileDailyReport, cfg.Cron.Timezone)
+		if err != nil {
+			logger.Error("cron_daily_report_job_init_failed", zap.Error(err))
+			return
+		}
+		if err := scheduler.Register(usecase.ScheduleSpec{
+			Expression: cfg.Cron.DailyReportExpression,
+			Timezone:   cfg.Cron.Timezone,
+		}, dailyReportJob); err != nil {
+			logger.Error("cron_job_register_failed", zap.Error(err))
+			return
+		}
+		if err := scheduler.Start(); err != nil {
+			logger.Error("cron_scheduler_start_failed", zap.Error(err))
+			return
+		}
+		defer scheduler.Stop(context.Background())
+		logger.Info("cron_scheduler_started",
+			zap.String("daily_report_expression", cfg.Cron.DailyReportExpression),
+			zap.String("timezone", cfg.Cron.Timezone),
+		)
+	}
 
 	reportHandler := handler.NewReportHandler(compileDailyReport, getDailyReport)
 	authHandler := handler.NewAuthHandler(cfg.Auth)
