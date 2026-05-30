@@ -97,6 +97,9 @@ curl -X POST http://localhost:8080/api/upload \
 curl "http://localhost:8080/api/meals?date=2026-05-22" \
   -H "Authorization: Bearer <token>"
 
+curl "http://localhost:8080/api/meals?q=tea&start_date=2026-05-20&end_date=2026-05-25&meal_type=snack&page=1&page_size=20&sort_by=estimated_sugar_grams&sort_type=desc" \
+  -H "Authorization: Bearer <token>"
+
 curl -X POST "http://localhost:8080/jobs/daily-report?date=2026-05-21" \
   -H "Authorization: Bearer <token>"
 
@@ -173,10 +176,15 @@ Login success response example:
 - when `source_meal_id` is provided, `dish_name` and `image_url` must be omitted; `meal_type` and `recorded_at` may override the cloned values.
 
 `GET /api/meals`:
-- returns all meals for a given day.
-- optional `date` query in `YYYY-MM-DD`; if omitted, backend uses today.
-- optional `sort` or `sortby`: `created_desc` (default), `created_asc`, `name_asc`, `name_desc`.
-- optional `X-Timezone` header controls how the requested day is interpreted; defaults to `Asia/Ho_Chi_Minh`.
+- returns filtered meals.
+- optional `date` query in `YYYY-MM-DD` keeps the old exact-day behavior.
+- optional `start_date` and `end_date` queries in `YYYY-MM-DD` filter by local recorded date range.
+- optional `q` or `query` searches by `dish_name`.
+- optional `meal_type` filters by `breakfast`, `lunch`, `dinner`, `snack`, `drink`, `unspecified`.
+- pagination uses `page` and `page_size`; defaults to `1` and `20`, and `page_size` is capped at `100`.
+- sorting uses `sort_by` (`recorded_at`, `dish_name`, `meal_type`, `estimated_sugar_grams`, `estimated_calories`) and `sort_type` (`asc`, `desc`).
+- `sortBy` and `sortType` are also accepted for frontend compatibility.
+- optional `X-Timezone` header controls how `date`, `start_date`, and `end_date` are interpreted; defaults to `Asia/Ho_Chi_Minh`.
 
 `POST /api/upload`:
 - accepts `multipart/form-data`

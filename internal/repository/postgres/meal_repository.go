@@ -81,6 +81,57 @@ func (r MealRepository) ListByDay(ctx context.Context, filter domain.MealsByDayF
 	return meals, nil
 }
 
+func (r MealRepository) List(ctx context.Context, filter domain.MealListFilter) ([]domain.Meal, int64, error) {
+	var (
+		startAt pgtype.Timestamptz
+		endAt   pgtype.Timestamptz
+	)
+	hasStartAt := filter.StartAt != nil
+	hasEndAt := filter.EndAt != nil
+	if hasStartAt {
+		startAt = pgtype.Timestamptz{Time: filter.StartAt.UTC(), Valid: true}
+	}
+	if hasEndAt {
+		endAt = pgtype.Timestamptz{Time: filter.EndAt.UTC(), Valid: true}
+	}
+
+	total, err := r.queries.CountMeals(ctx, reposqlc.CountMealsParams{
+		QueryText:  filter.Query,
+		MealType:   filter.MealType,
+		HasStartAt: hasStartAt,
+		StartAt:    startAt,
+		HasEndAt:   hasEndAt,
+		EndAt:      endAt,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	offset := (filter.Page - 1) * filter.PageSize
+	rows, err := r.queries.ListMeals(ctx, reposqlc.ListMealsParams{
+		QueryText:   filter.Query,
+		MealType:    filter.MealType,
+		HasStartAt:  hasStartAt,
+		StartAt:     startAt,
+		HasEndAt:    hasEndAt,
+		EndAt:       endAt,
+		SortBy:      filter.SortBy,
+		SortType:    filter.SortType,
+		LimitCount:  filter.PageSize,
+		OffsetCount: offset,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	meals := make([]domain.Meal, 0, len(rows))
+	for _, row := range rows {
+		meals = append(meals, mapMealRow(row))
+	}
+
+	return meals, total, nil
+}
+
 func (r MealRepository) ListRecentDistinct(ctx context.Context, filter domain.RecentMealsFilter) ([]domain.Meal, int64, error) {
 	total, err := r.queries.CountRecentDistinctMeals(ctx, filter.Query)
 	if err != nil {

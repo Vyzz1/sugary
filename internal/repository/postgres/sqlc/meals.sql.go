@@ -11,6 +11,39 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countMeals = `-- name: CountMeals :one
+SELECT COUNT(*)
+FROM meals
+WHERE deleted_at IS NULL
+  AND ($1::text = '' OR unaccent(lower(dish_name)) LIKE '%' || unaccent(lower($1::text)) || '%')
+  AND ($2::text = '' OR meal_type = $2::text)
+  AND (NOT $3::bool OR recorded_at >= $4)
+  AND (NOT $5::bool OR recorded_at < $6)
+`
+
+type CountMealsParams struct {
+	QueryText  string             `json:"query_text"`
+	MealType   string             `json:"meal_type"`
+	HasStartAt bool               `json:"has_start_at"`
+	StartAt    pgtype.Timestamptz `json:"start_at"`
+	HasEndAt   bool               `json:"has_end_at"`
+	EndAt      pgtype.Timestamptz `json:"end_at"`
+}
+
+func (q *Queries) CountMeals(ctx context.Context, arg CountMealsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMeals,
+		arg.QueryText,
+		arg.MealType,
+		arg.HasStartAt,
+		arg.StartAt,
+		arg.HasEndAt,
+		arg.EndAt,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countRecentDistinctMeals = `-- name: CountRecentDistinctMeals :one
 WITH distinct_meals AS (
     SELECT DISTINCT ON (lower(dish_name), COALESCE(image_url, ''))
@@ -142,6 +175,92 @@ func (q *Queries) GetMealByID(ctx context.Context, id int64) (Meal, error) {
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const listMeals = `-- name: ListMeals :many
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
+FROM meals
+WHERE deleted_at IS NULL
+  AND ($1::text = '' OR unaccent(lower(dish_name)) LIKE '%' || unaccent(lower($1::text)) || '%')
+  AND ($2::text = '' OR meal_type = $2::text)
+  AND (NOT $3::bool OR recorded_at >= $4)
+  AND (NOT $5::bool OR recorded_at < $6)
+ORDER BY
+    CASE WHEN $7::text = 'recorded_at' AND $8::text = 'asc' THEN recorded_at END ASC,
+    CASE WHEN $7::text = 'recorded_at' AND $8::text = 'desc' THEN recorded_at END DESC,
+    CASE WHEN $7::text = 'dish_name' AND $8::text = 'asc' THEN unaccent(lower(dish_name)) END ASC,
+    CASE WHEN $7::text = 'dish_name' AND $8::text = 'desc' THEN unaccent(lower(dish_name)) END DESC,
+    CASE WHEN $7::text = 'meal_type' AND $8::text = 'asc' THEN lower(meal_type) END ASC,
+    CASE WHEN $7::text = 'meal_type' AND $8::text = 'desc' THEN lower(meal_type) END DESC,
+    CASE WHEN $7::text = 'estimated_sugar_grams' AND $8::text = 'asc' THEN estimated_sugar_grams END ASC,
+    CASE WHEN $7::text = 'estimated_sugar_grams' AND $8::text = 'desc' THEN estimated_sugar_grams END DESC,
+    CASE WHEN $7::text = 'estimated_calories' AND $8::text = 'asc' THEN estimated_calories END ASC,
+    CASE WHEN $7::text = 'estimated_calories' AND $8::text = 'desc' THEN estimated_calories END DESC,
+    recorded_at DESC,
+    id DESC
+LIMIT $10
+OFFSET $9
+`
+
+type ListMealsParams struct {
+	QueryText   string             `json:"query_text"`
+	MealType    string             `json:"meal_type"`
+	HasStartAt  bool               `json:"has_start_at"`
+	StartAt     pgtype.Timestamptz `json:"start_at"`
+	HasEndAt    bool               `json:"has_end_at"`
+	EndAt       pgtype.Timestamptz `json:"end_at"`
+	SortBy      string             `json:"sort_by"`
+	SortType    string             `json:"sort_type"`
+	OffsetCount int32              `json:"offset_count"`
+	LimitCount  int32              `json:"limit_count"`
+}
+
+func (q *Queries) ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, error) {
+	rows, err := q.db.Query(ctx, listMeals,
+		arg.QueryText,
+		arg.MealType,
+		arg.HasStartAt,
+		arg.StartAt,
+		arg.HasEndAt,
+		arg.EndAt,
+		arg.SortBy,
+		arg.SortType,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Meal
+	for rows.Next() {
+		var i Meal
+		if err := rows.Scan(
+			&i.ID,
+			&i.DishName,
+			&i.MealType,
+			&i.ImageUrl,
+			&i.RecordedAt,
+			&i.AnalysisStatus,
+			&i.EstimatedSugarGrams,
+			&i.EstimatedCarbsGrams,
+			&i.EstimatedProteinGrams,
+			&i.EstimatedCalories,
+			&i.RiskLevel,
+			&i.AnalysisNotes,
+			&i.IsUserEdited,
+			&i.AnalysisRetryCount,
+			&i.LastAnalysisAttemptAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listMealsByDay = `-- name: ListMealsByDay :many

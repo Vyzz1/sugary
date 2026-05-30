@@ -47,7 +47,7 @@ func main() {
 
 	logMeal := usecase.NewLogMeal(mealRepository, nutritionAnalyzer).WithPublisher(wsHub)
 	uploadFile := usecase.NewUploadFile(fileUploader)
-	listMealsByDay := usecase.NewListMealsByDay(mealRepository)
+	listMeals := usecase.NewListMeals(mealRepository)
 	listRecentMeals := usecase.NewListRecentMeals(mealRepository)
 	editMealAnalysis := usecase.NewEditMealAnalysis(mealRepository)
 	editMeal := usecase.NewEditMeal(mealRepository, nutritionAnalyzer).WithPublisher(wsHub)
@@ -98,7 +98,7 @@ func main() {
 	reportHandler := handler.NewReportHandler(compileDailyReport, getDailyReport)
 	authHandler := handler.NewAuthHandler(cfg.Auth)
 	uploadHandler := handler.NewUploadHandler(uploadFile)
-	mealHandler := handler.NewMealHandler(logMeal, listMealsByDay, listRecentMeals, editMealAnalysis, editMeal, deleteMeal)
+	mealHandler := handler.NewMealHandler(logMeal, listMeals, listRecentMeals, editMealAnalysis, editMeal, deleteMeal)
 	wsHandler := handler.NewWSHandler(wsHub, cfg.Auth.JWTSecret)
 
 	router := httpdelivery.NewRouter(

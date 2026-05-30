@@ -21,7 +21,7 @@ type logMealUseCase interface {
 
 type MealHandler struct {
 	logMeal          logMealUseCase
-	listMealsByDay   listMealsByDayUseCase
+	listMeals        listMealsUseCase
 	listRecentMeals  listRecentMealsUseCase
 	editMealAnalysis editMealAnalysisUseCase
 	editMeal         editMealUseCase
@@ -40,8 +40,8 @@ type editMealUseCase interface {
 	Execute(ctx context.Context, input domain.EditMealInput) (domain.Meal, error)
 }
 
-type listMealsByDayUseCase interface {
-	Execute(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, domain.MealsByDayFilter, error)
+type listMealsUseCase interface {
+	Execute(ctx context.Context, filter domain.MealListFilter) ([]domain.Meal, int64, domain.MealListFilter, error)
 }
 
 type listRecentMealsUseCase interface {
@@ -72,7 +72,7 @@ type editMealAnalysisRequest struct {
 
 func NewMealHandler(
 	logMeal logMealUseCase,
-	listMealsByDay listMealsByDayUseCase,
+	listMeals listMealsUseCase,
 	listRecentMeals listRecentMealsUseCase,
 	editMealAnalysis editMealAnalysisUseCase,
 	editMeal editMealUseCase,
@@ -80,7 +80,7 @@ func NewMealHandler(
 ) MealHandler {
 	return MealHandler{
 		logMeal:          logMeal,
-		listMealsByDay:   listMealsByDay,
+		listMeals:        listMeals,
 		listRecentMeals:  listRecentMeals,
 		editMealAnalysis: editMealAnalysis,
 		editMeal:         editMeal,
@@ -175,35 +175,100 @@ func (h MealHandler) ListByDay(ctx *gin.Context) {
 		return
 	}
 
-	sortValue := strings.TrimSpace(ctx.Query("sort"))
-	if sortValue == "" {
-		sortValue = strings.TrimSpace(ctx.Query("sortby"))
+	filter := domain.MealListFilter{
+		Query:    strings.TrimSpace(ctx.Query("q")),
+		MealType: strings.TrimSpace(strings.ToLower(ctx.Query("meal_type"))),
+		Page:     1,
+		PageSize: 20,
+		SortBy:   strings.TrimSpace(ctx.Query("sort_by")),
+		SortType: strings.TrimSpace(ctx.Query("sort_type")),
+	}
+	if filter.Query == "" {
+		filter.Query = strings.TrimSpace(ctx.Query("query"))
+	}
+	if filter.SortBy == "" {
+		filter.SortBy = strings.TrimSpace(ctx.Query("sortBy"))
+	}
+	if filter.SortType == "" {
+		filter.SortType = strings.TrimSpace(ctx.Query("sortType"))
 	}
 
-	filter := domain.MealsByDayFilter{
-		Day:  time.Now().In(location),
-		Sort: sortValue,
+	if filter.MealType != "" && !domain.IsValidMealType(filter.MealType) {
+		ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_meal_type", "meal_type must be one of breakfast, lunch, dinner, snack, drink, unspecified"))
+		return
 	}
-	if dayParam := strings.TrimSpace(ctx.Query("date")); dayParam != "" {
-		parsed, err := parseDayInLocation(dayParam, location)
+
+	if rawPage := strings.TrimSpace(ctx.Query("page")); rawPage != "" {
+		parsed, err := strconv.ParseInt(rawPage, 10, 32)
+		if err != nil || parsed <= 0 {
+			ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_page", "page must be a positive integer"))
+			return
+		}
+		filter.Page = int32(parsed)
+	}
+	if rawPageSize := strings.TrimSpace(ctx.Query("page_size")); rawPageSize != "" {
+		parsed, err := strconv.ParseInt(rawPageSize, 10, 32)
+		if err != nil || parsed <= 0 {
+			ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_page_size", "page_size must be a positive integer"))
+			return
+		}
+		filter.PageSize = int32(parsed)
+	}
+
+	if dateParam := strings.TrimSpace(ctx.Query("date")); dateParam != "" {
+		parsed, err := parseDayInLocation(dateParam, location)
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_date", "date must be YYYY-MM-DD"))
 			return
 		}
-		filter.Day = parsed
+		start := parsed
+		end := parsed.Add(24 * time.Hour)
+		filter.StartAt = &start
+		filter.EndAt = &end
+	} else {
+		if startDate := strings.TrimSpace(ctx.Query("start_date")); startDate != "" {
+			parsed, err := parseDayInLocation(startDate, location)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_start_date", "start_date must be YYYY-MM-DD"))
+				return
+			}
+			filter.StartAt = &parsed
+		}
+		if endDate := strings.TrimSpace(ctx.Query("end_date")); endDate != "" {
+			parsed, err := parseDayInLocation(endDate, location)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_end_date", "end_date must be YYYY-MM-DD"))
+				return
+			}
+			end := parsed.Add(24 * time.Hour)
+			filter.EndAt = &end
+		}
 	}
 
-	meals, normalized, err := h.listMealsByDay.Execute(ctx.Request.Context(), filter)
+	if filter.StartAt != nil && filter.EndAt != nil && !filter.StartAt.Before(*filter.EndAt) {
+		ctx.JSON(http.StatusBadRequest, httpresponse.Fail(ctx, "invalid_date_range", "start_date must be before or equal to end_date"))
+		return
+	}
+
+	meals, total, normalized, err := h.listMeals.Execute(ctx.Request.Context(), filter)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, httpresponse.Fail(ctx, "list_meals_failed", err.Error()))
 		return
 	}
 
 	ctx.JSON(http.StatusOK, httpresponse.OKWithMeta(ctx, meals, gin.H{
-		"date":     normalized.Day.In(location).Format("2006-01-02"),
-		"sort":     normalized.Sort,
-		"timezone": timezoneName,
-		"count":    len(meals),
+		"query":            normalized.Query,
+		"meal_type":        normalized.MealType,
+		"start_date":       formatOptionalLocalDate(normalized.StartAt, location),
+		"end_date":         formatOptionalInclusiveLocalDate(normalized.EndAt, location),
+		"page":             normalized.Page,
+		"page_size":        normalized.PageSize,
+		"sort_by":          normalized.SortBy,
+		"sort_type":        normalized.SortType,
+		"sortable_columns": []string{"recorded_at", "dish_name", "meal_type", "estimated_sugar_grams", "estimated_calories"},
+		"timezone":         timezoneName,
+		"count":            len(meals),
+		"total":            total,
 	}))
 }
 
@@ -399,4 +464,20 @@ func isValidHTTPURL(raw string) bool {
 	}
 
 	return parsed.Host != ""
+}
+
+func formatOptionalLocalDate(value *time.Time, location *time.Location) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.In(location).Format("2006-01-02")
+	return &formatted
+}
+
+func formatOptionalInclusiveLocalDate(value *time.Time, location *time.Location) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.Add(-24 * time.Hour).In(location).Format("2006-01-02")
+	return &formatted
 }

@@ -14,6 +14,7 @@ import (
 type stubMealRepository struct {
 	createFn               func(ctx context.Context, meal domain.Meal) (domain.Meal, error)
 	listByDayFn            func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error)
+	listFn                 func(ctx context.Context, filter domain.MealListFilter) ([]domain.Meal, int64, error)
 	listRecentDistinctFn   func(ctx context.Context, filter domain.RecentMealsFilter) ([]domain.Meal, int64, error)
 	getByIDFn              func(ctx context.Context, mealID int64) (domain.Meal, error)
 	updateMetaFn           func(ctx context.Context, mealID int64, mealType string, recordedAt time.Time) (domain.Meal, error)
@@ -33,6 +34,13 @@ func (s stubMealRepository) Create(ctx context.Context, meal domain.Meal) (domai
 
 func (s stubMealRepository) ListByDay(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
 	return s.listByDayFn(ctx, filter)
+}
+
+func (s stubMealRepository) List(ctx context.Context, filter domain.MealListFilter) ([]domain.Meal, int64, error) {
+	if s.listFn == nil {
+		return nil, 0, nil
+	}
+	return s.listFn(ctx, filter)
 }
 
 func (s stubMealRepository) ListRecentDistinct(ctx context.Context, filter domain.RecentMealsFilter) ([]domain.Meal, int64, error) {

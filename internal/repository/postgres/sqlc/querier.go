@@ -11,10 +11,12 @@ import (
 )
 
 type Querier interface {
+	CountMeals(ctx context.Context, arg CountMealsParams) (int64, error)
 	CountRecentDistinctMeals(ctx context.Context, queryText string) (int64, error)
 	CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, error)
 	GetDailyReportByDate(ctx context.Context, reportDate pgtype.Date) (DailyReport, error)
 	GetMealByID(ctx context.Context, id int64) (Meal, error)
+	ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, error)
 	ListMealsByDay(ctx context.Context, arg ListMealsByDayParams) ([]Meal, error)
 	ListRecentDistinctMeals(ctx context.Context, arg ListRecentDistinctMealsParams) ([]ListRecentDistinctMealsRow, error)
 	ListRetryableFailedMeals(ctx context.Context, arg ListRetryableFailedMealsParams) ([]Meal, error)

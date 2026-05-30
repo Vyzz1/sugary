@@ -42,6 +42,39 @@ ORDER BY
     recorded_at DESC, 
     id DESC;
 
+-- name: CountMeals :one
+SELECT COUNT(*)
+FROM meals
+WHERE deleted_at IS NULL
+  AND (sqlc.arg(query_text)::text = '' OR unaccent(lower(dish_name)) LIKE '%' || unaccent(lower(sqlc.arg(query_text)::text)) || '%')
+  AND (sqlc.arg(meal_type)::text = '' OR meal_type = sqlc.arg(meal_type)::text)
+  AND (NOT sqlc.arg(has_start_at)::bool OR recorded_at >= sqlc.arg(start_at))
+  AND (NOT sqlc.arg(has_end_at)::bool OR recorded_at < sqlc.arg(end_at));
+
+-- name: ListMeals :many
+SELECT id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
+FROM meals
+WHERE deleted_at IS NULL
+  AND (sqlc.arg(query_text)::text = '' OR unaccent(lower(dish_name)) LIKE '%' || unaccent(lower(sqlc.arg(query_text)::text)) || '%')
+  AND (sqlc.arg(meal_type)::text = '' OR meal_type = sqlc.arg(meal_type)::text)
+  AND (NOT sqlc.arg(has_start_at)::bool OR recorded_at >= sqlc.arg(start_at))
+  AND (NOT sqlc.arg(has_end_at)::bool OR recorded_at < sqlc.arg(end_at))
+ORDER BY
+    CASE WHEN sqlc.arg(sort_by)::text = 'recorded_at' AND sqlc.arg(sort_type)::text = 'asc' THEN recorded_at END ASC,
+    CASE WHEN sqlc.arg(sort_by)::text = 'recorded_at' AND sqlc.arg(sort_type)::text = 'desc' THEN recorded_at END DESC,
+    CASE WHEN sqlc.arg(sort_by)::text = 'dish_name' AND sqlc.arg(sort_type)::text = 'asc' THEN unaccent(lower(dish_name)) END ASC,
+    CASE WHEN sqlc.arg(sort_by)::text = 'dish_name' AND sqlc.arg(sort_type)::text = 'desc' THEN unaccent(lower(dish_name)) END DESC,
+    CASE WHEN sqlc.arg(sort_by)::text = 'meal_type' AND sqlc.arg(sort_type)::text = 'asc' THEN lower(meal_type) END ASC,
+    CASE WHEN sqlc.arg(sort_by)::text = 'meal_type' AND sqlc.arg(sort_type)::text = 'desc' THEN lower(meal_type) END DESC,
+    CASE WHEN sqlc.arg(sort_by)::text = 'estimated_sugar_grams' AND sqlc.arg(sort_type)::text = 'asc' THEN estimated_sugar_grams END ASC,
+    CASE WHEN sqlc.arg(sort_by)::text = 'estimated_sugar_grams' AND sqlc.arg(sort_type)::text = 'desc' THEN estimated_sugar_grams END DESC,
+    CASE WHEN sqlc.arg(sort_by)::text = 'estimated_calories' AND sqlc.arg(sort_type)::text = 'asc' THEN estimated_calories END ASC,
+    CASE WHEN sqlc.arg(sort_by)::text = 'estimated_calories' AND sqlc.arg(sort_type)::text = 'desc' THEN estimated_calories END DESC,
+    recorded_at DESC,
+    id DESC
+LIMIT sqlc.arg(limit_count)
+OFFSET sqlc.arg(offset_count);
+
 -- name: ListRecentDistinctMeals :many
 WITH distinct_meals AS (
     SELECT DISTINCT ON (lower(dish_name), COALESCE(image_url, ''))

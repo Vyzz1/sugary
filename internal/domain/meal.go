@@ -77,6 +77,17 @@ type MealsByDayFilter struct {
 	Sort string
 }
 
+type MealListFilter struct {
+	Query    string
+	MealType string
+	StartAt  *time.Time
+	EndAt    *time.Time
+	Page     int32
+	PageSize int32
+	SortBy   string
+	SortType string
+}
+
 type RetryableFailedMealsFilter struct {
 	Before        time.Time
 	Limit         int32
@@ -86,6 +97,7 @@ type RetryableFailedMealsFilter struct {
 type MealRepository interface {
 	Create(ctx context.Context, meal Meal) (Meal, error)
 	ListByDay(ctx context.Context, filter MealsByDayFilter) ([]Meal, error)
+	List(ctx context.Context, filter MealListFilter) ([]Meal, int64, error)
 	ListRecentDistinct(ctx context.Context, filter RecentMealsFilter) ([]Meal, int64, error)
 	GetByID(ctx context.Context, mealID int64) (Meal, error)
 	UpdateMeta(ctx context.Context, mealID int64, mealType string, recordedAt time.Time) (Meal, error)

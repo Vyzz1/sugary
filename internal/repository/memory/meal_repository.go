@@ -60,6 +60,48 @@ func (r *MealRepository) ListByDay(ctx context.Context, filter domain.MealsByDay
 	return result, nil
 }
 
+func (r *MealRepository) List(ctx context.Context, filter domain.MealListFilter) ([]domain.Meal, int64, error) {
+	_ = ctx
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]domain.Meal, 0)
+	query := strings.ToLower(strings.TrimSpace(filter.Query))
+	for _, meal := range r.meals {
+		if meal.DeletedAt != nil {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(meal.DishName), query) {
+			continue
+		}
+		if filter.MealType != "" && meal.MealType != filter.MealType {
+			continue
+		}
+		if filter.StartAt != nil && meal.RecordedAt.UTC().Before(filter.StartAt.UTC()) {
+			continue
+		}
+		if filter.EndAt != nil && !meal.RecordedAt.UTC().Before(filter.EndAt.UTC()) {
+			continue
+		}
+		result = append(result, meal)
+	}
+
+	sortMeals(result, filter.SortBy, filter.SortType)
+
+	total := int64(len(result))
+	start := int((filter.Page - 1) * filter.PageSize)
+	if start >= len(result) {
+		return []domain.Meal{}, total, nil
+	}
+	end := start + int(filter.PageSize)
+	if end > len(result) {
+		end = len(result)
+	}
+
+	return result[start:end], total, nil
+}
+
 func (r *MealRepository) ListRecentDistinct(ctx context.Context, filter domain.RecentMealsFilter) ([]domain.Meal, int64, error) {
 	_ = ctx
 
@@ -343,5 +385,66 @@ func sortRecentMeals(meals []domain.Meal, sortType string) {
 			}
 			return meals[i].RecordedAt.After(meals[j].RecordedAt)
 		}
+	})
+}
+
+func sortMeals(meals []domain.Meal, sortBy string, sortType string) {
+	sort.Slice(meals, func(i, j int) bool {
+		less := false
+		switch sortBy {
+		case "dish_name":
+			left := strings.ToLower(meals[i].DishName)
+			right := strings.ToLower(meals[j].DishName)
+			if left == right {
+				less = meals[i].RecordedAt.Before(meals[j].RecordedAt)
+			} else {
+				less = left < right
+			}
+		case "meal_type":
+			left := strings.ToLower(meals[i].MealType)
+			right := strings.ToLower(meals[j].MealType)
+			if left == right {
+				less = meals[i].RecordedAt.Before(meals[j].RecordedAt)
+			} else {
+				less = left < right
+			}
+		case "estimated_sugar_grams":
+			left, right := 0.0, 0.0
+			if meals[i].Analysis != nil {
+				left = meals[i].Analysis.EstimatedSugarGrams
+			}
+			if meals[j].Analysis != nil {
+				right = meals[j].Analysis.EstimatedSugarGrams
+			}
+			if left == right {
+				less = meals[i].RecordedAt.Before(meals[j].RecordedAt)
+			} else {
+				less = left < right
+			}
+		case "estimated_calories":
+			left, right := 0, 0
+			if meals[i].Analysis != nil {
+				left = meals[i].Analysis.EstimatedCalories
+			}
+			if meals[j].Analysis != nil {
+				right = meals[j].Analysis.EstimatedCalories
+			}
+			if left == right {
+				less = meals[i].RecordedAt.Before(meals[j].RecordedAt)
+			} else {
+				less = left < right
+			}
+		default:
+			if meals[i].RecordedAt.Equal(meals[j].RecordedAt) {
+				less = meals[i].ID < meals[j].ID
+			} else {
+				less = meals[i].RecordedAt.Before(meals[j].RecordedAt)
+			}
+		}
+
+		if sortType == "asc" {
+			return less
+		}
+		return !less
 	})
 }
