@@ -296,6 +296,8 @@ func (r *MealRepository) UpdateAnalysisResult(ctx context.Context, mealID int64,
 			r.meals[i].Analysis = &nutrition
 			r.meals[i].AnalysisStatus = domain.AnalysisStatusCompleted
 			r.meals[i].IsUserEdited = false
+			r.meals[i].AnalysisRetryCount = 0
+			r.meals[i].LastAnalysisAttemptAt = nil
 			return r.meals[i], nil
 		}
 	}

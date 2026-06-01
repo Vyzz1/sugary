@@ -593,7 +593,9 @@ SET
     risk_level             = $6,
     analysis_notes         = $7,
     analysis_status        = 'completed',
-    is_user_edited         = FALSE
+    is_user_edited         = FALSE,
+    analysis_retry_count   = 0,
+    last_analysis_attempt_at = NULL
 WHERE id = $1
   AND deleted_at IS NULL
 RETURNING id, dish_name, meal_type, image_url, recorded_at, analysis_status, estimated_sugar_grams, estimated_carbs_grams, estimated_protein_grams, estimated_calories, risk_level, analysis_notes, is_user_edited, analysis_retry_count, last_analysis_attempt_at, deleted_at
