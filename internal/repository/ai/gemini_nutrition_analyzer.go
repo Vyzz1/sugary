@@ -119,34 +119,6 @@ func (a GeminiNutritionAnalyzer) AnalyzeMeal(ctx context.Context, input domain.A
 	return nutrition, nil
 }
 
-func buildPrompt(input domain.AnalyzeMealInput) string {
-	imageURL := "none"
-	if input.ImageURL != nil && strings.TrimSpace(*input.ImageURL) != "" {
-		imageURL = strings.TrimSpace(*input.ImageURL)
-	}
-
-	return fmt.Sprintf(`You are a nutrition estimation engine.
-Estimate sugar and calories for this meal:
-- dish_name: %q
-- image_url: %q
-
-Return STRICT JSON only with this shape:
-{
-  "estimated_sugar_grams": number,
-  "estimated_carbs_grams": number,
-  "estimated_protein_grams": number,
-  "estimated_calories": integer,
-  "risk_level": "low" | "medium" | "high",
-  "notes": ["short note 1", "short note 2"]
-}
-
-Rules:
-- risk_level low if sugar < 10g, medium if 10-25g, high if >25g.
-- notes must be concise, practical, and written in English.
-- keep dish_name semantics from the input; do not translate the dish name because it is not part of the output schema.
-- no markdown, no extra keys, no explanation text.`, input.DishName, imageURL)
-}
-
 func parseNutritionJSON(raw string) (domain.Nutrition, error) {
 	type nutritionPayload struct {
 		EstimatedSugarGrams   float64  `json:"estimated_sugar_grams"`

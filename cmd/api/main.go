@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -10,6 +11,7 @@ import (
 	"sugary/internal/config"
 	httpdelivery "sugary/internal/delivery/http"
 	"sugary/internal/delivery/http/handler"
+	"sugary/internal/domain"
 	"sugary/internal/platform/hub"
 	"sugary/internal/platform/logging"
 	cronplatform "sugary/internal/platform/scheduler/cron"
@@ -38,8 +40,28 @@ func main() {
 
 	mealRepository := postgres.NewMealRepository(store.Queries)
 	dailyReportRepository := postgres.NewDailyReportRepository(store.Queries)
-	nutritionAnalyzer := ai.NewGeminiNutritionAnalyzer(cfg.GeminiAPIKey, cfg.GeminiModel)
-	dailyReportInterpreter := ai.NewGeminiDailyReportInterpreter(cfg.GeminiAPIKey, cfg.GeminiModel)
+	geminiNutritionAnalyzer := ai.NewGeminiNutritionAnalyzer(cfg.GeminiAPIKey, cfg.GeminiModel)
+	geminiDailyReportInterpreter := ai.NewGeminiDailyReportInterpreter(cfg.GeminiAPIKey, cfg.GeminiModel)
+	nutritionAnalyzer := domain.NutritionAnalyzer(geminiNutritionAnalyzer)
+	dailyReportInterpreter := domain.DailyReportInterpreter(geminiDailyReportInterpreter)
+	if strings.EqualFold(strings.TrimSpace(cfg.AIProvider), "huggingface") {
+		huggingFaceConfig := ai.HuggingFaceConfig{
+			APIToken: cfg.HuggingFace.APIToken,
+			Model:    cfg.HuggingFace.Model,
+			APIURL:   cfg.HuggingFace.APIURL,
+		}
+		nutritionAnalyzer = ai.NewFallbackNutritionAnalyzer(
+			ai.NewHuggingFaceNutritionAnalyzer(huggingFaceConfig),
+			geminiNutritionAnalyzer,
+		)
+		dailyReportInterpreter = ai.NewFallbackDailyReportInterpreter(
+			ai.NewHuggingFaceDailyReportInterpreter(huggingFaceConfig),
+			geminiDailyReportInterpreter,
+		)
+		logger.Info("ai_provider_selected", zap.String("provider", "huggingface"), zap.String("fallback", "gemini"))
+	} else {
+		logger.Info("ai_provider_selected", zap.String("provider", "gemini"))
+	}
 	fileUploader := uploadproxy.NewHTTPUploader(cfg.Upload)
 
 	// Hub broadcasts async AI results to all connected WebSocket clients.

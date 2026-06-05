@@ -18,8 +18,10 @@ type Config struct {
 	Port             string
 	LogLevel         string
 	CORSAllowOrigins string
+	AIProvider       string
 	GeminiAPIKey     string
 	GeminiModel      string
+	HuggingFace      HuggingFaceConfig
 	Auth             AuthConfig
 	Upload           UploadConfig
 	Postgres         PostgresConfig
@@ -38,6 +40,12 @@ type UploadConfig struct {
 	APIURL        string
 	InternalToken string
 	Folder        string
+}
+
+type HuggingFaceConfig struct {
+	APIToken string
+	Model    string
+	APIURL   string
 }
 
 type PostgresConfig struct {
@@ -76,8 +84,14 @@ func Load() Config {
 		Port:             getEnv("PORT", getEnv("APP_PORT", defaultPort)),
 		LogLevel:         getEnv("LOG_LEVEL", "info"),
 		CORSAllowOrigins: getEnv("CORS_ALLOW_ORIGINS", "*"),
+		AIProvider:       getEnv("AI_PROVIDER", "gemini"),
 		GeminiAPIKey:     os.Getenv("GEMINI_API_KEY"),
 		GeminiModel:      getEnv("GEMINI_MODEL", "gemini-2.5-flash"),
+		HuggingFace: HuggingFaceConfig{
+			APIToken: os.Getenv("HUGGINGFACE_API_TOKEN"),
+			Model:    getEnv("HUGGINGFACE_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
+			APIURL:   getEnv("HUGGINGFACE_API_URL", "https://router.huggingface.co/v1/chat/completions"),
+		},
 		Auth: AuthConfig{
 			LoginUser:     os.Getenv("LOGIN_USER"),
 			LoginPassword: os.Getenv("LOGIN_PASSWORD"),
