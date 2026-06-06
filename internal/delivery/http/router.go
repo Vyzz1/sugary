@@ -15,6 +15,7 @@ func NewRouter(
 	uploadHandler handler.UploadHandler,
 	mealHandler handler.MealHandler,
 	reportHandler handler.ReportHandler,
+	insightHandler handler.InsightHandler,
 	jobHandler handler.JobHandler,
 	wsHandler handler.WSHandler,
 ) *gin.Engine {
@@ -43,6 +44,7 @@ func NewRouter(
 	protected.DELETE("/meals/:id", mealHandler.DeleteMeal)
 	protected.POST("/jobs/daily-report", jobHandler.RunDailyReport)
 	protected.GET("/reports/daily", reportHandler.GetDaily)
+	protected.GET("/insight", insightHandler.Get)
 
 	return router
 }

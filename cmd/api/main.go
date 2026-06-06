@@ -40,6 +40,7 @@ func main() {
 
 	mealRepository := postgres.NewMealRepository(store.Queries)
 	dailyReportRepository := postgres.NewDailyReportRepository(store.Queries)
+	insightRepository := postgres.NewInsightRepository(store.Queries)
 	geminiNutritionAnalyzer := ai.NewGeminiNutritionAnalyzer(cfg.GeminiAPIKey, cfg.GeminiModel)
 	geminiDailyReportInterpreter := ai.NewGeminiDailyReportInterpreter(cfg.GeminiAPIKey, cfg.GeminiModel)
 	nutritionAnalyzer := domain.NutritionAnalyzer(geminiNutritionAnalyzer)
@@ -76,6 +77,7 @@ func main() {
 	deleteMeal := usecase.NewDeleteMeal(mealRepository)
 	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository, dailyReportInterpreter).WithPublisher(wsHub)
 	getDailyReport := usecase.NewGetDailyReport(dailyReportRepository)
+	getInsight := usecase.NewGetInsight(insightRepository)
 	retryFailedMealAnalyses := usecase.NewRetryFailedMealAnalyses(
 		mealRepository,
 		nutritionAnalyzer,
@@ -118,6 +120,7 @@ func main() {
 	}
 
 	reportHandler := handler.NewReportHandler(compileDailyReport, getDailyReport)
+	insightHandler := handler.NewInsightHandler(getInsight)
 	authHandler := handler.NewAuthHandler(cfg.Auth)
 	uploadHandler := handler.NewUploadHandler(uploadFile)
 	mealHandler := handler.NewMealHandler(logMeal, listMeals, listRecentMeals, editMealAnalysis, editMeal, deleteMeal)
@@ -130,6 +133,7 @@ func main() {
 		uploadHandler,
 		mealHandler,
 		reportHandler,
+		insightHandler,
 		handler.NewJobHandler(reportHandler),
 		wsHandler,
 	)
