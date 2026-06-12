@@ -90,6 +90,23 @@ func (uc CompileWeeklyReport) Execute(ctx context.Context, day time.Time) (domai
 	if err != nil {
 		return domain.WeeklyReport{}, err
 	}
+	if found && hasCompletedAIInsights(existing.AIInsightSource, existing.AIInsightStatus) {
+		zap.L().Info("weekly_report_compile_skipped_existing_ai_completed",
+			zap.String("week_start_date", existing.WeekStartDate.Format(time.DateOnly)),
+			zap.String("week_end_date", existing.WeekEndDate.Format(time.DateOnly)),
+			zap.String("ai_insight_source", existing.AIInsightSource),
+			zap.String("ai_insight_status", existing.AIInsightStatus),
+		)
+		return existing, nil
+	}
+	if found {
+		zap.L().Info("weekly_report_compile_reprocessing_existing_fallback",
+			zap.String("week_start_date", existing.WeekStartDate.Format(time.DateOnly)),
+			zap.String("week_end_date", existing.WeekEndDate.Format(time.DateOnly)),
+			zap.String("ai_insight_source", existing.AIInsightSource),
+			zap.String("ai_insight_status", existing.AIInsightStatus),
+		)
+	}
 
 	createdAt := uc.now().UTC()
 	if found && !existing.CreatedAt.IsZero() {

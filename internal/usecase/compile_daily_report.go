@@ -87,6 +87,26 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 
 	day = timeutil.StartOfDay(day)
 
+	existing, found, err := uc.dailyReportRepository.GetByDay(ctx, timeutil.CanonicalUTCDate(day))
+	if err != nil {
+		return domain.DailyReport{}, err
+	}
+	if found && hasCompletedAIInsights(existing.AIInsightSource, existing.AIInsightStatus) {
+		zap.L().Info("daily_report_compile_skipped_existing_ai_completed",
+			zap.String("report_date", existing.Date.Format(time.DateOnly)),
+			zap.String("ai_insight_source", existing.AIInsightSource),
+			zap.String("ai_insight_status", existing.AIInsightStatus),
+		)
+		return existing, nil
+	}
+	if found {
+		zap.L().Info("daily_report_compile_reprocessing_existing_fallback",
+			zap.String("report_date", existing.Date.Format(time.DateOnly)),
+			zap.String("ai_insight_source", existing.AIInsightSource),
+			zap.String("ai_insight_status", existing.AIInsightStatus),
+		)
+	}
+
 	meals, err := uc.mealRepository.ListByDay(ctx, domain.MealsByDayFilter{
 		Day:  day,
 		Sort: defaultRecentMealsSort,
@@ -190,6 +210,12 @@ func fallbackDailyReportAIInsights(summary string) domain.DailyReportAIInsights 
 		Recommendations: []string{},
 		PatternSignals:  []string{},
 	}
+}
+
+func hasCompletedAIInsights(source string, status string) bool {
+	return strings.TrimSpace(strings.ToLower(status)) == "completed" &&
+		strings.TrimSpace(strings.ToLower(source)) != "" &&
+		strings.TrimSpace(strings.ToLower(source)) != "fallback"
 }
 
 func compareRisk(left string, right string) int {

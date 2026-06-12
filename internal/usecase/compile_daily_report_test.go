@@ -399,3 +399,84 @@ func TestCompileDailyReportExecuteNoMealsBroadcastsAfterSuccessfulSave(t *testin
 		t.Fatal("expected broadcast for no-meals report")
 	}
 }
+
+func TestCompileDailyReportExecuteReturnsExistingWhenAICompleted(t *testing.T) {
+	t.Parallel()
+
+	expected := domain.DailyReport{
+		Date:            time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC),
+		Summary:         "Existing AI summary",
+		AIInsightSource: "gemini",
+		AIInsightStatus: "completed",
+	}
+
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				t.Fatal("expected ListByDay not to be called")
+				return nil, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error {
+				t.Fatal("expected Save not to be called")
+				return nil
+			},
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return expected, true, nil
+			},
+		},
+		stubDailyReportInterpreter{
+			generateInsightsFn: func(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error) {
+				t.Fatal("expected AI interpreter not to be called")
+				return domain.DailyReportAIInsights{}, nil
+			},
+		},
+	)
+
+	report, err := uc.Execute(context.Background(), time.Date(2026, 6, 12, 15, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if report.Summary != expected.Summary {
+		t.Fatalf("expected existing report summary %q, got %q", expected.Summary, report.Summary)
+	}
+}
+
+func TestCompileDailyReportExecuteRecompilesExistingFallback(t *testing.T) {
+	t.Parallel()
+
+	listCalled := false
+	saveCalled := false
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				listCalled = true
+				return []domain.Meal{}, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error {
+				saveCalled = true
+				return nil
+			},
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{
+					AIInsightSource: "fallback",
+					AIInsightStatus: "fallback",
+				}, true, nil
+			},
+		},
+		nil,
+	)
+
+	if _, err := uc.Execute(context.Background(), time.Date(2026, 6, 12, 15, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !listCalled {
+		t.Fatal("expected fallback report to be recompiled")
+	}
+	if !saveCalled {
+		t.Fatal("expected fallback report recompile to save")
+	}
+}
