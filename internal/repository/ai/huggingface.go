@@ -129,8 +129,18 @@ type HuggingFaceDailyReportInterpreter struct {
 	analyzer HuggingFaceNutritionAnalyzer
 }
 
+type HuggingFaceWeeklyReportInterpreter struct {
+	analyzer HuggingFaceNutritionAnalyzer
+}
+
 func NewHuggingFaceDailyReportInterpreter(config HuggingFaceConfig) HuggingFaceDailyReportInterpreter {
 	return HuggingFaceDailyReportInterpreter{
+		analyzer: NewHuggingFaceNutritionAnalyzer(config),
+	}
+}
+
+func NewHuggingFaceWeeklyReportInterpreter(config HuggingFaceConfig) HuggingFaceWeeklyReportInterpreter {
+	return HuggingFaceWeeklyReportInterpreter{
 		analyzer: NewHuggingFaceNutritionAnalyzer(config),
 	}
 }
@@ -151,6 +161,29 @@ func (i HuggingFaceDailyReportInterpreter) GenerateInsights(ctx context.Context,
 	zap.L().Info("huggingface_daily_report_generated",
 		zap.String("model", i.analyzer.model),
 		zap.String("date", input.Report.Date.Format("2006-01-02")),
+		zap.Int("meal_count", input.Report.MealCount),
+		zap.Int64("latency_ms", time.Since(start).Milliseconds()),
+	)
+
+	return insights, nil
+}
+
+func (i HuggingFaceWeeklyReportInterpreter) GenerateInsights(ctx context.Context, input domain.GenerateWeeklyReportSummaryInput) (domain.WeeklyReportAIInsights, error) {
+	start := time.Now()
+
+	text, err := i.analyzer.chat(ctx, buildWeeklyReportPrompt(input), 0.4)
+	if err != nil {
+		return domain.WeeklyReportAIInsights{}, err
+	}
+
+	insights, err := parseWeeklyReportInsightsJSON(text)
+	if err != nil {
+		return domain.WeeklyReportAIInsights{}, err
+	}
+
+	zap.L().Info("huggingface_weekly_report_generated",
+		zap.String("model", i.analyzer.model),
+		zap.String("week_start_date", input.Report.WeekStartDate.Format("2006-01-02")),
 		zap.Int("meal_count", input.Report.MealCount),
 		zap.Int64("latency_ms", time.Since(start).Milliseconds()),
 	)

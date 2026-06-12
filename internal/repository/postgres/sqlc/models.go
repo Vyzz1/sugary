@@ -38,3 +38,19 @@ type Meal struct {
 	LastAnalysisAttemptAt pgtype.Timestamptz `json:"last_analysis_attempt_at"`
 	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
 }
+
+type WeeklyReport struct {
+	WeekStartDate     pgtype.Date        `json:"week_start_date"`
+	WeekEndDate       pgtype.Date        `json:"week_end_date"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	MealCount         int32              `json:"meal_count"`
+	AnalyzedMealCount int32              `json:"analyzed_meal_count"`
+	TotalSugarGrams   float64            `json:"total_sugar_grams"`
+	AverageSugarGrams float64            `json:"average_sugar_grams"`
+	HighestRiskLevel  string             `json:"highest_risk_level"`
+	Summary           string             `json:"summary"`
+	DailyBreakdown    []byte             `json:"daily_breakdown"`
+	AiInsights        []byte             `json:"ai_insights"`
+	AiInsightSource   string             `json:"ai_insight_source"`
+	AiInsightStatus   string             `json:"ai_insight_status"`
+}

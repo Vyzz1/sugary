@@ -43,7 +43,9 @@ func NewRouter(
 	protected.PATCH("/meals/:id/analysis", mealHandler.EditAnalysis)
 	protected.DELETE("/meals/:id", mealHandler.DeleteMeal)
 	protected.POST("/jobs/daily-report", jobHandler.RunDailyReport)
+	protected.POST("/jobs/weekly-report", jobHandler.RunWeeklyReport)
 	protected.GET("/reports/daily", reportHandler.GetDaily)
+	protected.GET("/reports/weekly", reportHandler.GetWeekly)
 	protected.GET("/insight", insightHandler.Get)
 
 	return router

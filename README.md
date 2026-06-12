@@ -55,6 +55,7 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 CRON_ENABLED=false
 CRON_DAILY_REPORT_EXPRESSION="5 0 * * *"
+CRON_WEEKLY_REPORT_EXPRESSION="10 0 * * 1"
 CRON_TIMEZONE=Asia/Ho_Chi_Minh
 CRON_MEAL_ANALYSIS_RETRY_EXPRESSION="*/15 * * * *"
 CRON_MEAL_ANALYSIS_RETRY_MAX_ATTEMPTS=5
@@ -274,6 +275,7 @@ Errors use:
 - `REDIS_*`: connection settings for cache and job-related state
 - `CRON_ENABLED`: enables the built-in in-process scheduler for daily report generation
 - `CRON_DAILY_REPORT_EXPRESSION`: cron expression for the daily report job, default `5 0 * * *`
+- `CRON_WEEKLY_REPORT_EXPRESSION`: cron expression for the weekly report job, default `10 0 * * 1`
 - `CRON_TIMEZONE`: timezone used by the built-in scheduler, default `Asia/Ho_Chi_Minh`
 - `CRON_MEAL_ANALYSIS_RETRY_EXPRESSION`: cron expression for retrying failed meal analyses, default every 15 minutes
 - `CRON_MEAL_ANALYSIS_RETRY_MAX_ATTEMPTS`: max failed analysis waves before the retry cron stops picking a meal
@@ -292,6 +294,8 @@ When `CRON_ENABLED=true`, the API process starts an internal scheduler backed by
 - the scheduled job reuses the same `CompileDailyReport` use case as `POST /api/jobs/daily-report`
 - the default schedule is `00:05` every day in `Asia/Ho_Chi_Minh`
 - the job always compiles the report for the previous local day
+- the weekly scheduled job reuses `CompileWeeklyReport` and defaults to `00:10` every Monday
+- the weekly job always compiles the previous completed Monday-Sunday week
 - manual triggering via `POST /api/jobs/daily-report` is still available for re-runs and backfills
 - a second scheduled job retries failed meal analyses using the same async AI runner path
 - failed analyses remain eligible while `analysis_retry_count < CRON_MEAL_ANALYSIS_RETRY_MAX_ATTEMPTS`

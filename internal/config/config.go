@@ -67,6 +67,7 @@ type RedisConfig struct {
 type CronConfig struct {
 	Enabled                          bool
 	DailyReportExpression            string
+	WeeklyReportExpression           string
 	Timezone                         string
 	MealAnalysisRetryExpression      string
 	MealAnalysisRetryMaxAttempts     int32
@@ -120,6 +121,7 @@ func Load() Config {
 		Cron: CronConfig{
 			Enabled:                          getEnvBool("CRON_ENABLED", false),
 			DailyReportExpression:            getEnv("CRON_DAILY_REPORT_EXPRESSION", "5 0 * * *"),
+			WeeklyReportExpression:           getEnv("CRON_WEEKLY_REPORT_EXPRESSION", "10 0 * * 1"),
 			Timezone:                         getEnv("CRON_TIMEZONE", timeutil.DefaultTimezone),
 			MealAnalysisRetryExpression:      getEnv("CRON_MEAL_ANALYSIS_RETRY_EXPRESSION", "*/15 * * * *"),
 			MealAnalysisRetryMaxAttempts:     int32(getEnvInt("CRON_MEAL_ANALYSIS_RETRY_MAX_ATTEMPTS", 5)),

@@ -17,6 +17,8 @@ type Querier interface {
 	GetDailyReportByDate(ctx context.Context, reportDate pgtype.Date) (DailyReport, error)
 	GetInsightDailySugar(ctx context.Context, arg GetInsightDailySugarParams) ([]GetInsightDailySugarRow, error)
 	GetInsightMealTypeBreakdown(ctx context.Context, arg GetInsightMealTypeBreakdownParams) ([]GetInsightMealTypeBreakdownRow, error)
+	// Insight queries intentionally do not scope by user yet.
+	// TODO: add user_id filter when the meals table supports users.
 	GetInsightPeriodStats(ctx context.Context, arg GetInsightPeriodStatsParams) (GetInsightPeriodStatsRow, error)
 	GetInsightRiskDistribution(ctx context.Context, arg GetInsightRiskDistributionParams) ([]GetInsightRiskDistributionRow, error)
 	GetInsightSugarVsCalories(ctx context.Context, arg GetInsightSugarVsCaloriesParams) ([]GetInsightSugarVsCaloriesRow, error)
@@ -24,6 +26,7 @@ type Querier interface {
 	GetInsightTopSugarMeals(ctx context.Context, arg GetInsightTopSugarMealsParams) ([]GetInsightTopSugarMealsRow, error)
 	GetInsightWeeklySugar(ctx context.Context, arg GetInsightWeeklySugarParams) ([]GetInsightWeeklySugarRow, error)
 	GetMealByID(ctx context.Context, id int64) (Meal, error)
+	GetWeeklyReportByWeekStart(ctx context.Context, weekStartDate pgtype.Date) (WeeklyReport, error)
 	ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, error)
 	ListMealsByDay(ctx context.Context, arg ListMealsByDayParams) ([]Meal, error)
 	ListRecentDistinctMeals(ctx context.Context, arg ListRecentDistinctMealsParams) ([]ListRecentDistinctMealsRow, error)
@@ -40,6 +43,7 @@ type Querier interface {
 	UpdateMealMetaByID(ctx context.Context, arg UpdateMealMetaByIDParams) (Meal, error)
 	UpdateMealWithAnalysisByID(ctx context.Context, arg UpdateMealWithAnalysisByIDParams) (Meal, error)
 	UpsertDailyReport(ctx context.Context, arg UpsertDailyReportParams) error
+	UpsertWeeklyReport(ctx context.Context, arg UpsertWeeklyReportParams) error
 }
 
 var _ Querier = (*Queries)(nil)

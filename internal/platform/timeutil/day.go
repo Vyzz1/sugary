@@ -33,3 +33,13 @@ func DayBoundsUTC(day time.Time) (time.Time, time.Time) {
 	start := StartOfDay(day)
 	return start.UTC(), start.Add(24 * time.Hour).UTC()
 }
+
+func StartOfWeek(day time.Time) time.Time {
+	start := StartOfDay(day)
+	offset := (int(start.Weekday()) + 6) % 7
+	return start.AddDate(0, 0, -offset)
+}
+
+func IsWeekStart(day time.Time) bool {
+	return StartOfDay(day).Weekday() == time.Monday
+}

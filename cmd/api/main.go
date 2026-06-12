@@ -40,11 +40,14 @@ func main() {
 
 	mealRepository := postgres.NewMealRepository(store.Queries)
 	dailyReportRepository := postgres.NewDailyReportRepository(store.Queries)
+	weeklyReportRepository := postgres.NewWeeklyReportRepository(store.Queries)
 	insightRepository := postgres.NewInsightRepository(store.Queries)
 	geminiNutritionAnalyzer := ai.NewGeminiNutritionAnalyzer(cfg.GeminiAPIKey, cfg.GeminiModel)
 	geminiDailyReportInterpreter := ai.NewGeminiDailyReportInterpreter(cfg.GeminiAPIKey, cfg.GeminiModel)
+	geminiWeeklyReportInterpreter := ai.NewGeminiWeeklyReportInterpreter(cfg.GeminiAPIKey, cfg.GeminiModel)
 	nutritionAnalyzer := domain.NutritionAnalyzer(geminiNutritionAnalyzer)
 	dailyReportInterpreter := domain.DailyReportInterpreter(geminiDailyReportInterpreter)
+	weeklyReportInterpreter := domain.WeeklyReportInterpreter(geminiWeeklyReportInterpreter)
 	if strings.EqualFold(strings.TrimSpace(cfg.AIProvider), "huggingface") {
 		huggingFaceConfig := ai.HuggingFaceConfig{
 			APIToken: cfg.HuggingFace.APIToken,
@@ -58,6 +61,10 @@ func main() {
 		dailyReportInterpreter = ai.NewFallbackDailyReportInterpreter(
 			ai.NewHuggingFaceDailyReportInterpreter(huggingFaceConfig),
 			geminiDailyReportInterpreter,
+		)
+		weeklyReportInterpreter = ai.NewFallbackWeeklyReportInterpreter(
+			ai.NewHuggingFaceWeeklyReportInterpreter(huggingFaceConfig),
+			geminiWeeklyReportInterpreter,
 		)
 		logger.Info("ai_provider_selected", zap.String("provider", "huggingface"), zap.String("fallback", "gemini"))
 	} else {
@@ -76,7 +83,9 @@ func main() {
 	editMeal := usecase.NewEditMeal(mealRepository, nutritionAnalyzer).WithPublisher(wsHub)
 	deleteMeal := usecase.NewDeleteMeal(mealRepository)
 	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository, dailyReportInterpreter).WithPublisher(wsHub)
+	compileWeeklyReport := usecase.NewCompileWeeklyReport(mealRepository, weeklyReportRepository, weeklyReportInterpreter).WithPublisher(wsHub)
 	getDailyReport := usecase.NewGetDailyReport(dailyReportRepository)
+	getWeeklyReport := usecase.NewGetWeeklyReport(weeklyReportRepository)
 	getInsight := usecase.NewGetInsight(insightRepository)
 	retryFailedMealAnalyses := usecase.NewRetryFailedMealAnalyses(
 		mealRepository,
@@ -100,6 +109,18 @@ func main() {
 			logger.Error("cron_job_register_failed", zap.Error(err))
 			return
 		}
+		weeklyReportJob, err := usecase.NewWeeklyReportJob(compileWeeklyReport, cfg.Cron.Timezone)
+		if err != nil {
+			logger.Error("cron_weekly_report_job_init_failed", zap.Error(err))
+			return
+		}
+		if err := scheduler.Register(usecase.ScheduleSpec{
+			Expression: cfg.Cron.WeeklyReportExpression,
+			Timezone:   cfg.Cron.Timezone,
+		}, weeklyReportJob); err != nil {
+			logger.Error("cron_weekly_report_job_register_failed", zap.Error(err))
+			return
+		}
 		if err := scheduler.Register(usecase.ScheduleSpec{
 			Expression: cfg.Cron.MealAnalysisRetryExpression,
 			Timezone:   cfg.Cron.Timezone,
@@ -114,12 +135,13 @@ func main() {
 		defer scheduler.Stop(context.Background())
 		logger.Info("cron_scheduler_started",
 			zap.String("daily_report_expression", cfg.Cron.DailyReportExpression),
+			zap.String("weekly_report_expression", cfg.Cron.WeeklyReportExpression),
 			zap.String("timezone", cfg.Cron.Timezone),
 			zap.String("meal_analysis_retry_expression", cfg.Cron.MealAnalysisRetryExpression),
 		)
 	}
 
-	reportHandler := handler.NewReportHandler(compileDailyReport, getDailyReport)
+	reportHandler := handler.NewReportHandler(compileDailyReport, getDailyReport, compileWeeklyReport, getWeeklyReport)
 	insightHandler := handler.NewInsightHandler(getInsight)
 	authHandler := handler.NewAuthHandler(cfg.Auth)
 	uploadHandler := handler.NewUploadHandler(uploadFile)
