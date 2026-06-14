@@ -145,6 +145,14 @@ func NewHuggingFaceWeeklyReportInterpreter(config HuggingFaceConfig) HuggingFace
 	}
 }
 
+func (i HuggingFaceDailyReportInterpreter) AIInsightProviderName() string {
+	return "huggingface"
+}
+
+func (i HuggingFaceWeeklyReportInterpreter) AIInsightProviderName() string {
+	return "huggingface"
+}
+
 func (i HuggingFaceDailyReportInterpreter) GenerateInsights(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error) {
 	start := time.Now()
 

@@ -25,6 +25,7 @@ type CompileWeeklyReport struct {
 	weeklyReportRepository domain.WeeklyReportRepository
 	interpreter            domain.WeeklyReportInterpreter
 	publisher              DailyReportPublisher
+	emailSender            domain.ReportEmailSender
 	now                    func() time.Time
 }
 
@@ -43,6 +44,11 @@ func NewCompileWeeklyReport(
 
 func (uc CompileWeeklyReport) WithPublisher(publisher DailyReportPublisher) CompileWeeklyReport {
 	uc.publisher = publisher
+	return uc
+}
+
+func (uc CompileWeeklyReport) WithEmailSender(sender domain.ReportEmailSender) CompileWeeklyReport {
+	uc.emailSender = sender
 	return uc
 }
 
@@ -66,6 +72,16 @@ func (uc CompileWeeklyReport) broadcastReport(msg weeklyReportPush) {
 func (uc CompileWeeklyReport) saveAndBroadcast(ctx context.Context, report domain.WeeklyReport) error {
 	if err := uc.weeklyReportRepository.Save(ctx, report); err != nil {
 		return err
+	}
+
+	if uc.emailSender != nil {
+		if err := uc.emailSender.SendWeeklyReport(ctx, report); err != nil {
+			zap.L().Warn("weekly_report_email_send_failed",
+				zap.String("week_start_date", report.WeekStartDate.Format(time.DateOnly)),
+				zap.String("week_end_date", report.WeekEndDate.Format(time.DateOnly)),
+				zap.Error(err),
+			)
+		}
 	}
 
 	uc.broadcastReport(weeklyReportPush{
@@ -190,7 +206,7 @@ func (uc CompileWeeklyReport) Execute(ctx context.Context, day time.Time) (domai
 			insights.Summary = strings.TrimSpace(insights.Summary)
 			report.Summary = insights.Summary
 			report.AIInsights = insights
-			report.AIInsightSource = "gemini"
+			report.AIInsightSource = aiInsightSourceName(uc.interpreter)
 			report.AIInsightStatus = "completed"
 		} else if err != nil {
 			zap.L().Warn("weekly_report_ai_fallback_used",

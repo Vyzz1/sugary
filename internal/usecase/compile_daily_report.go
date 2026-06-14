@@ -17,6 +17,10 @@ type DailyReportPublisher interface {
 	Broadcast(msg []byte)
 }
 
+type aiInsightProvider interface {
+	AIInsightProviderName() string
+}
+
 type dailyReportPush struct {
 	Type   string              `json:"type"`
 	Status string              `json:"status"`
@@ -29,6 +33,7 @@ type CompileDailyReport struct {
 	dailyReportRepository domain.DailyReportRepository
 	interpreter           domain.DailyReportInterpreter
 	publisher             DailyReportPublisher
+	emailSender           domain.ReportEmailSender
 }
 
 func NewCompileDailyReport(
@@ -45,6 +50,11 @@ func NewCompileDailyReport(
 
 func (uc CompileDailyReport) WithPublisher(publisher DailyReportPublisher) CompileDailyReport {
 	uc.publisher = publisher
+	return uc
+}
+
+func (uc CompileDailyReport) WithEmailSender(sender domain.ReportEmailSender) CompileDailyReport {
+	uc.emailSender = sender
 	return uc
 }
 
@@ -69,6 +79,15 @@ func (uc CompileDailyReport) broadcastReport(msg dailyReportPush) {
 func (uc CompileDailyReport) saveAndBroadcast(ctx context.Context, report domain.DailyReport) error {
 	if err := uc.dailyReportRepository.Save(ctx, report); err != nil {
 		return err
+	}
+
+	if uc.emailSender != nil {
+		if err := uc.emailSender.SendDailyReport(ctx, report); err != nil {
+			zap.L().Warn("daily_report_email_send_failed",
+				zap.String("report_date", report.Date.Format(time.DateOnly)),
+				zap.Error(err),
+			)
+		}
 	}
 
 	uc.broadcastReport(dailyReportPush{
@@ -166,7 +185,7 @@ func (uc CompileDailyReport) Execute(ctx context.Context, day time.Time) (domain
 			insights.Summary = strings.TrimSpace(insights.Summary)
 			report.Summary = insights.Summary
 			report.AIInsights = insights
-			report.AIInsightSource = "gemini"
+			report.AIInsightSource = aiInsightSourceName(uc.interpreter)
 			report.AIInsightStatus = "completed"
 		} else if err != nil {
 			zap.L().Warn("daily_report_ai_fallback_used",
@@ -216,6 +235,16 @@ func hasCompletedAIInsights(source string, status string) bool {
 	return strings.TrimSpace(strings.ToLower(status)) == "completed" &&
 		strings.TrimSpace(strings.ToLower(source)) != "" &&
 		strings.TrimSpace(strings.ToLower(source)) != "fallback"
+}
+
+func aiInsightSourceName(interpreter any) string {
+	if provider, ok := interpreter.(aiInsightProvider); ok {
+		source := strings.TrimSpace(strings.ToLower(provider.AIInsightProviderName()))
+		if source != "" {
+			return source
+		}
+	}
+	return "gemini"
 }
 
 func compareRisk(left string, right string) int {

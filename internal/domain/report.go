@@ -98,3 +98,8 @@ type DailyReportInterpreter interface {
 type WeeklyReportInterpreter interface {
 	GenerateInsights(ctx context.Context, input GenerateWeeklyReportSummaryInput) (WeeklyReportAIInsights, error)
 }
+
+type ReportEmailSender interface {
+	SendDailyReport(ctx context.Context, report DailyReport) error
+	SendWeeklyReport(ctx context.Context, report WeeklyReport) error
+}

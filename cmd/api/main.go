@@ -16,6 +16,7 @@ import (
 	"sugary/internal/platform/logging"
 	cronplatform "sugary/internal/platform/scheduler/cron"
 	"sugary/internal/repository/ai"
+	"sugary/internal/repository/mail"
 	"sugary/internal/repository/postgres"
 	"sugary/internal/repository/uploadproxy"
 	"sugary/internal/usecase"
@@ -71,6 +72,11 @@ func main() {
 		logger.Info("ai_provider_selected", zap.String("provider", "gemini"))
 	}
 	fileUploader := uploadproxy.NewHTTPUploader(cfg.Upload)
+	reportEmailSender, err := mail.NewBrevoReportEmailSender(cfg.Brevo)
+	if err != nil {
+		logger.Error("brevo_report_email_sender_init_failed", zap.Error(err))
+		return
+	}
 
 	// Hub broadcasts async AI results to all connected WebSocket clients.
 	wsHub := hub.New()
@@ -82,8 +88,12 @@ func main() {
 	editMealAnalysis := usecase.NewEditMealAnalysis(mealRepository)
 	editMeal := usecase.NewEditMeal(mealRepository, nutritionAnalyzer).WithPublisher(wsHub)
 	deleteMeal := usecase.NewDeleteMeal(mealRepository)
-	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository, dailyReportInterpreter).WithPublisher(wsHub)
-	compileWeeklyReport := usecase.NewCompileWeeklyReport(mealRepository, weeklyReportRepository, weeklyReportInterpreter).WithPublisher(wsHub)
+	compileDailyReport := usecase.NewCompileDailyReport(mealRepository, dailyReportRepository, dailyReportInterpreter).
+		WithPublisher(wsHub).
+		WithEmailSender(reportEmailSender)
+	compileWeeklyReport := usecase.NewCompileWeeklyReport(mealRepository, weeklyReportRepository, weeklyReportInterpreter).
+		WithPublisher(wsHub).
+		WithEmailSender(reportEmailSender)
 	getDailyReport := usecase.NewGetDailyReport(dailyReportRepository)
 	getWeeklyReport := usecase.NewGetWeeklyReport(weeklyReportRepository)
 	getInsight := usecase.NewGetInsight(insightRepository)

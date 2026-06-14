@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 
@@ -22,6 +23,7 @@ type Config struct {
 	GeminiAPIKey     string
 	GeminiModel      string
 	HuggingFace      HuggingFaceConfig
+	Brevo            BrevoConfig
 	Auth             AuthConfig
 	Upload           UploadConfig
 	Postgres         PostgresConfig
@@ -46,6 +48,15 @@ type HuggingFaceConfig struct {
 	APIToken string
 	Model    string
 	APIURL   string
+}
+
+type BrevoConfig struct {
+	Enabled      bool
+	APIKey       string
+	APIURL       string
+	SenderEmail  string
+	SenderName   string
+	ReportEmails []string
 }
 
 type PostgresConfig struct {
@@ -92,6 +103,14 @@ func Load() Config {
 			APIToken: os.Getenv("HUGGINGFACE_API_TOKEN"),
 			Model:    getEnv("HUGGINGFACE_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
 			APIURL:   getEnv("HUGGINGFACE_API_URL", "https://router.huggingface.co/v1/chat/completions"),
+		},
+		Brevo: BrevoConfig{
+			Enabled:      getEnvBool("BREVO_ENABLED", false),
+			APIKey:       os.Getenv("BREVO_API_KEY"),
+			APIURL:       getEnv("BREVO_API_URL", "https://api.brevo.com/v3/smtp/email"),
+			SenderEmail:  os.Getenv("BREVO_SENDER_EMAIL"),
+			SenderName:   getEnv("BREVO_SENDER_NAME", "Sugary"),
+			ReportEmails: getEnvCSV("BREVO_REPORT_RECIPIENTS"),
 		},
 		Auth: AuthConfig{
 			LoginUser:     os.Getenv("LOGIN_USER"),
@@ -166,6 +185,23 @@ func getEnvInt(key string, fallback int) int {
 	}
 
 	return parsed
+}
+
+func getEnvCSV(key string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 func (c PostgresConfig) DSN() string {

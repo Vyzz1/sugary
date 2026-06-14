@@ -16,6 +16,7 @@ type stubWeeklyReportRepository struct {
 }
 
 type stubWeeklyReportInterpreter struct {
+	providerName       string
 	generateInsightsFn func(ctx context.Context, input domain.GenerateWeeklyReportSummaryInput) (domain.WeeklyReportAIInsights, error)
 }
 
@@ -29,6 +30,10 @@ func (s stubWeeklyReportRepository) GetByWeekStart(ctx context.Context, weekStar
 
 func (s stubWeeklyReportInterpreter) GenerateInsights(ctx context.Context, input domain.GenerateWeeklyReportSummaryInput) (domain.WeeklyReportAIInsights, error) {
 	return s.generateInsightsFn(ctx, input)
+}
+
+func (s stubWeeklyReportInterpreter) AIInsightProviderName() string {
+	return s.providerName
 }
 
 func TestCompileWeeklyReportExecute(t *testing.T) {
@@ -339,5 +344,151 @@ func TestCompileWeeklyReportExecuteRecompilesExistingFallback(t *testing.T) {
 	}
 	if !saveCalled {
 		t.Fatal("expected fallback report recompile to save")
+	}
+}
+
+func TestCompileWeeklyReportExecuteSendsEmailAfterSuccessfulSave(t *testing.T) {
+	t.Parallel()
+
+	saveCalled := false
+	emailCalled := false
+	uc := NewCompileWeeklyReport(
+		stubMealRepository{
+			listFn: func(ctx context.Context, filter domain.MealListFilter) ([]domain.Meal, int64, error) {
+				return []domain.Meal{}, 0, nil
+			},
+		},
+		stubWeeklyReportRepository{
+			saveFn: func(ctx context.Context, report domain.WeeklyReport) error {
+				saveCalled = true
+				return nil
+			},
+			getByWeekStartFn: func(ctx context.Context, weekStart time.Time) (domain.WeeklyReport, bool, error) {
+				return domain.WeeklyReport{}, false, nil
+			},
+		},
+		nil,
+	).WithEmailSender(stubReportEmailSender{
+		sendWeeklyFn: func(ctx context.Context, report domain.WeeklyReport) error {
+			if !saveCalled {
+				t.Fatal("expected Save before email")
+			}
+			emailCalled = true
+			return nil
+		},
+	})
+
+	if _, err := uc.Execute(context.Background(), time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !emailCalled {
+		t.Fatal("expected weekly report email")
+	}
+}
+
+func TestCompileWeeklyReportExecuteIgnoresEmailFailure(t *testing.T) {
+	t.Parallel()
+
+	uc := NewCompileWeeklyReport(
+		stubMealRepository{
+			listFn: func(ctx context.Context, filter domain.MealListFilter) ([]domain.Meal, int64, error) {
+				return []domain.Meal{}, 0, nil
+			},
+		},
+		stubWeeklyReportRepository{
+			saveFn: func(ctx context.Context, report domain.WeeklyReport) error {
+				return nil
+			},
+			getByWeekStartFn: func(ctx context.Context, weekStart time.Time) (domain.WeeklyReport, bool, error) {
+				return domain.WeeklyReport{}, false, nil
+			},
+		},
+		nil,
+	).WithEmailSender(stubReportEmailSender{
+		sendWeeklyFn: func(ctx context.Context, report domain.WeeklyReport) error {
+			return errors.New("email failed")
+		},
+	})
+
+	if _, err := uc.Execute(context.Background(), time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("expected email error not to fail compile, got %v", err)
+	}
+}
+
+func TestCompileWeeklyReportExecuteDoesNotSendEmailWhenAICompletedSkip(t *testing.T) {
+	t.Parallel()
+
+	uc := NewCompileWeeklyReport(
+		stubMealRepository{
+			listFn: func(ctx context.Context, filter domain.MealListFilter) ([]domain.Meal, int64, error) {
+				t.Fatal("expected List not to be called")
+				return nil, 0, nil
+			},
+		},
+		stubWeeklyReportRepository{
+			saveFn: func(ctx context.Context, report domain.WeeklyReport) error {
+				t.Fatal("expected Save not to be called")
+				return nil
+			},
+			getByWeekStartFn: func(ctx context.Context, weekStart time.Time) (domain.WeeklyReport, bool, error) {
+				return domain.WeeklyReport{
+					AIInsightSource: "gemini",
+					AIInsightStatus: "completed",
+				}, true, nil
+			},
+		},
+		nil,
+	).WithEmailSender(stubReportEmailSender{
+		sendWeeklyFn: func(ctx context.Context, report domain.WeeklyReport) error {
+			t.Fatal("expected email not to be sent")
+			return nil
+		},
+	})
+
+	if _, err := uc.Execute(context.Background(), time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestCompileWeeklyReportExecuteUsesInterpreterProviderAsAISource(t *testing.T) {
+	t.Parallel()
+
+	uc := NewCompileWeeklyReport(
+		stubMealRepository{
+			listFn: func(ctx context.Context, filter domain.MealListFilter) ([]domain.Meal, int64, error) {
+				return []domain.Meal{
+					{
+						DishName:   "Milk tea",
+						RecordedAt: time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC),
+						Analysis: &domain.Nutrition{
+							EstimatedSugarGrams: 35,
+							RiskLevel:           "high",
+						},
+					},
+				}, 1, nil
+			},
+		},
+		stubWeeklyReportRepository{
+			saveFn: func(ctx context.Context, report domain.WeeklyReport) error {
+				return nil
+			},
+			getByWeekStartFn: func(ctx context.Context, weekStart time.Time) (domain.WeeklyReport, bool, error) {
+				return domain.WeeklyReport{}, false, nil
+			},
+		},
+		stubWeeklyReportInterpreter{
+			providerName: "huggingface",
+			generateInsightsFn: func(ctx context.Context, input domain.GenerateWeeklyReportSummaryInput) (domain.WeeklyReportAIInsights, error) {
+				return domain.WeeklyReportAIInsights{Summary: "AI weekly summary"}, nil
+			},
+		},
+	)
+
+	report, err := uc.Execute(context.Background(), time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if report.AIInsightSource != "huggingface" {
+		t.Fatalf("expected ai source huggingface, got %q", report.AIInsightSource)
 	}
 }

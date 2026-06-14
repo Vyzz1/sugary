@@ -39,6 +39,12 @@ GEMINI_MODEL=gemini-2.5-flash
 HUGGINGFACE_API_TOKEN=your-huggingface-token
 HUGGINGFACE_MODEL=Qwen/Qwen2.5-7B-Instruct
 HUGGINGFACE_API_URL=https://router.huggingface.co/v1/chat/completions
+BREVO_ENABLED=false
+BREVO_API_KEY=your-brevo-api-key
+BREVO_API_URL=https://api.brevo.com/v3/smtp/email
+BREVO_SENDER_EMAIL=reports@example.com
+BREVO_SENDER_NAME=Sugary
+BREVO_REPORT_RECIPIENTS=user@example.com
 UPLOAD_API_URL=https://your-upload-api.example.com/upload
 UPLOAD_INTERNAL_TOKEN=your-internal-upload-token
 UPLOAD_FOLDER=sugary
@@ -267,6 +273,12 @@ Errors use:
 - `HUGGINGFACE_MODEL`: Hugging Face chat model, defaults to `Qwen/Qwen2.5-7B-Instruct`
 - `HUGGINGFACE_API_URL`: Hugging Face OpenAI-compatible chat completions endpoint
 - when `AI_PROVIDER=huggingface`, backend calls Hugging Face first and falls back to Gemini on provider errors
+- `BREVO_ENABLED`: enables report email sending through Brevo HTTPS API
+- `BREVO_API_KEY`: Brevo transactional email API key
+- `BREVO_API_URL`: Brevo transactional email endpoint, default `https://api.brevo.com/v3/smtp/email`
+- `BREVO_SENDER_EMAIL`: sender email used for report emails
+- `BREVO_SENDER_NAME`: sender display name, default `Sugary`
+- `BREVO_REPORT_RECIPIENTS`: comma-separated recipients for daily and weekly report emails
 - `UPLOAD_API_URL`: upstream upload endpoint used by the upload proxy
 - `UPLOAD_INTERNAL_TOKEN`: value sent as `x-internal-upload-token` to the upstream upload API
 - `UPLOAD_FOLDER`: forwarded form field for the upstream upload API, defaults to `sugary`
@@ -296,6 +308,8 @@ When `CRON_ENABLED=true`, the API process starts an internal scheduler backed by
 - the job always compiles the report for the previous local day
 - the weekly scheduled job reuses `CompileWeeklyReport` and defaults to `00:10` every Monday
 - the weekly job always compiles the previous completed Monday-Sunday week
+- daily and weekly report compiles send Brevo report emails when `BREVO_ENABLED=true`; email failures are logged and do not fail report creation
+- report emails are sent on every successful compile, including fallback reports and manual re-runs
 - manual triggering via `POST /api/jobs/daily-report` is still available for re-runs and backfills
 - a second scheduled job retries failed meal analyses using the same async AI runner path
 - failed analyses remain eligible while `analysis_retry_count < CRON_MEAL_ANALYSIS_RETRY_MAX_ATTEMPTS`

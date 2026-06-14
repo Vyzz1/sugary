@@ -16,6 +16,7 @@ type stubDailyReportRepository struct {
 }
 
 type stubDailyReportInterpreter struct {
+	providerName       string
 	generateInsightsFn func(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error)
 }
 
@@ -29,6 +30,10 @@ func (s stubDailyReportRepository) GetByDay(ctx context.Context, day time.Time) 
 
 func (s stubDailyReportInterpreter) GenerateInsights(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error) {
 	return s.generateInsightsFn(ctx, input)
+}
+
+func (s stubDailyReportInterpreter) AIInsightProviderName() string {
+	return s.providerName
 }
 
 type capturingDailyReportPublisher struct {
@@ -478,5 +483,150 @@ func TestCompileDailyReportExecuteRecompilesExistingFallback(t *testing.T) {
 	}
 	if !saveCalled {
 		t.Fatal("expected fallback report recompile to save")
+	}
+}
+
+func TestCompileDailyReportExecuteSendsEmailAfterSuccessfulSave(t *testing.T) {
+	t.Parallel()
+
+	saveCalled := false
+	emailCalled := false
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return []domain.Meal{}, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error {
+				saveCalled = true
+				return nil
+			},
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{}, false, nil
+			},
+		},
+		nil,
+	).WithEmailSender(stubReportEmailSender{
+		sendDailyFn: func(ctx context.Context, report domain.DailyReport) error {
+			if !saveCalled {
+				t.Fatal("expected Save before email")
+			}
+			emailCalled = true
+			return nil
+		},
+	})
+
+	if _, err := uc.Execute(context.Background(), time.Date(2026, 6, 12, 15, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !emailCalled {
+		t.Fatal("expected daily report email")
+	}
+}
+
+func TestCompileDailyReportExecuteIgnoresEmailFailure(t *testing.T) {
+	t.Parallel()
+
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return []domain.Meal{}, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error {
+				return nil
+			},
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{}, false, nil
+			},
+		},
+		nil,
+	).WithEmailSender(stubReportEmailSender{
+		sendDailyFn: func(ctx context.Context, report domain.DailyReport) error {
+			return errors.New("email failed")
+		},
+	})
+
+	if _, err := uc.Execute(context.Background(), time.Date(2026, 6, 12, 15, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("expected email error not to fail compile, got %v", err)
+	}
+}
+
+func TestCompileDailyReportExecuteDoesNotSendEmailWhenAICompletedSkip(t *testing.T) {
+	t.Parallel()
+
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				t.Fatal("expected ListByDay not to be called")
+				return nil, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error {
+				t.Fatal("expected Save not to be called")
+				return nil
+			},
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{
+					AIInsightSource: "gemini",
+					AIInsightStatus: "completed",
+				}, true, nil
+			},
+		},
+		nil,
+	).WithEmailSender(stubReportEmailSender{
+		sendDailyFn: func(ctx context.Context, report domain.DailyReport) error {
+			t.Fatal("expected email not to be sent")
+			return nil
+		},
+	})
+
+	if _, err := uc.Execute(context.Background(), time.Date(2026, 6, 12, 15, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestCompileDailyReportExecuteUsesInterpreterProviderAsAISource(t *testing.T) {
+	t.Parallel()
+
+	uc := NewCompileDailyReport(
+		stubMealRepository{
+			listByDayFn: func(ctx context.Context, filter domain.MealsByDayFilter) ([]domain.Meal, error) {
+				return []domain.Meal{
+					{
+						DishName: "Milk tea",
+						Analysis: &domain.Nutrition{
+							EstimatedSugarGrams: 35,
+							RiskLevel:           "high",
+						},
+					},
+				}, nil
+			},
+		},
+		stubDailyReportRepository{
+			saveFn: func(ctx context.Context, report domain.DailyReport) error {
+				return nil
+			},
+			getByDayFn: func(ctx context.Context, day time.Time) (domain.DailyReport, bool, error) {
+				return domain.DailyReport{}, false, nil
+			},
+		},
+		stubDailyReportInterpreter{
+			providerName: "huggingface",
+			generateInsightsFn: func(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error) {
+				return domain.DailyReportAIInsights{Summary: "AI summary"}, nil
+			},
+		},
+	)
+
+	report, err := uc.Execute(context.Background(), time.Date(2026, 6, 12, 15, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if report.AIInsightSource != "huggingface" {
+		t.Fatalf("expected ai source huggingface, got %q", report.AIInsightSource)
 	}
 }

@@ -34,6 +34,10 @@ func NewGeminiWeeklyReportInterpreter(apiKey string, model string) GeminiWeeklyR
 	}
 }
 
+func (a GeminiWeeklyReportInterpreter) AIInsightProviderName() string {
+	return "gemini"
+}
+
 func (a GeminiWeeklyReportInterpreter) GenerateInsights(ctx context.Context, input domain.GenerateWeeklyReportSummaryInput) (domain.WeeklyReportAIInsights, error) {
 	start := time.Now()
 

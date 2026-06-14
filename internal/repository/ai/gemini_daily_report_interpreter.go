@@ -38,6 +38,10 @@ func NewGeminiDailyReportInterpreter(apiKey string, model string) GeminiDailyRep
 	}
 }
 
+func (a GeminiDailyReportInterpreter) AIInsightProviderName() string {
+	return "gemini"
+}
+
 func (a GeminiDailyReportInterpreter) GenerateInsights(ctx context.Context, input domain.GenerateDailyReportSummaryInput) (domain.DailyReportAIInsights, error) {
 	start := time.Now()
 
