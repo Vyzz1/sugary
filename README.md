@@ -34,6 +34,8 @@ APP_PORT=8080
 PORT=10000
 CORS_ALLOW_ORIGINS=*
 AI_PROVIDER=gemini
+AI_FALLBACK_ENABLED=false
+AI_FALLBACK_PROVIDER=
 GEMINI_API_KEY=your-gemini-key
 GEMINI_MODEL=gemini-2.5-flash
 HUGGINGFACE_API_TOKEN=your-huggingface-token
@@ -269,10 +271,12 @@ Errors use:
 - `GEMINI_API_KEY`: API key for the Gemini integration
 - `GEMINI_MODEL`: default model name, currently `gemini-2.5-flash`
 - `AI_PROVIDER`: primary AI provider, either `gemini` or `huggingface`; defaults to `gemini`
+- `AI_FALLBACK_ENABLED`: enables fallback to a secondary AI provider when the primary provider fails; defaults to `false`
+- `AI_FALLBACK_PROVIDER`: secondary AI provider used only when `AI_FALLBACK_ENABLED=true`, for example `huggingface`
 - `HUGGINGFACE_API_TOKEN`: Hugging Face router token, used when `AI_PROVIDER=huggingface`
 - `HUGGINGFACE_MODEL`: Hugging Face chat model, defaults to `Qwen/Qwen2.5-7B-Instruct`
 - `HUGGINGFACE_API_URL`: Hugging Face OpenAI-compatible chat completions endpoint
-- when `AI_PROVIDER=huggingface`, backend calls Hugging Face first and falls back to Gemini on provider errors
+- when fallback is enabled, backend calls `AI_PROVIDER` first and only calls `AI_FALLBACK_PROVIDER` after provider errors
 - `BREVO_ENABLED`: enables report email sending through Brevo HTTPS API
 - `BREVO_API_KEY`: Brevo transactional email API key
 - `BREVO_API_URL`: Brevo transactional email endpoint, default `https://api.brevo.com/v3/smtp/email`

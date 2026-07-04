@@ -58,3 +58,39 @@ func TestLoadBrevoDefaults(t *testing.T) {
 		t.Fatalf("expected no recipients, got %d", len(cfg.Brevo.ReportEmails))
 	}
 }
+
+func TestLoadAIFallbackConfig(t *testing.T) {
+	t.Setenv("AI_PROVIDER", "gemini")
+	t.Setenv("AI_FALLBACK_ENABLED", "true")
+	t.Setenv("AI_FALLBACK_PROVIDER", "huggingface")
+
+	cfg := Load()
+
+	if cfg.AIProvider != "gemini" {
+		t.Fatalf("expected primary provider gemini, got %q", cfg.AIProvider)
+	}
+	if !cfg.AIFallbackEnabled {
+		t.Fatal("expected AI fallback enabled")
+	}
+	if cfg.AIFallbackProvider != "huggingface" {
+		t.Fatalf("expected fallback provider huggingface, got %q", cfg.AIFallbackProvider)
+	}
+}
+
+func TestLoadAIFallbackDefaults(t *testing.T) {
+	t.Setenv("AI_PROVIDER", "")
+	t.Setenv("AI_FALLBACK_ENABLED", "")
+	t.Setenv("AI_FALLBACK_PROVIDER", "")
+
+	cfg := Load()
+
+	if cfg.AIProvider != "gemini" {
+		t.Fatalf("expected default provider gemini, got %q", cfg.AIProvider)
+	}
+	if cfg.AIFallbackEnabled {
+		t.Fatal("expected AI fallback disabled by default")
+	}
+	if cfg.AIFallbackProvider != "" {
+		t.Fatalf("expected empty fallback provider by default, got %q", cfg.AIFallbackProvider)
+	}
+}

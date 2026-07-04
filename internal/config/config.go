@@ -15,20 +15,22 @@ import (
 const defaultPort = "8080"
 
 type Config struct {
-	AppEnv           string
-	Port             string
-	LogLevel         string
-	CORSAllowOrigins string
-	AIProvider       string
-	GeminiAPIKey     string
-	GeminiModel      string
-	HuggingFace      HuggingFaceConfig
-	Brevo            BrevoConfig
-	Auth             AuthConfig
-	Upload           UploadConfig
-	Postgres         PostgresConfig
-	Redis            RedisConfig
-	Cron             CronConfig
+	AppEnv             string
+	Port               string
+	LogLevel           string
+	CORSAllowOrigins   string
+	AIProvider         string
+	AIFallbackEnabled  bool
+	AIFallbackProvider string
+	GeminiAPIKey       string
+	GeminiModel        string
+	HuggingFace        HuggingFaceConfig
+	Brevo              BrevoConfig
+	Auth               AuthConfig
+	Upload             UploadConfig
+	Postgres           PostgresConfig
+	Redis              RedisConfig
+	Cron               CronConfig
 }
 
 type AuthConfig struct {
@@ -92,13 +94,15 @@ func Load() Config {
 	}
 
 	return Config{
-		AppEnv:           getEnv("APP_ENV", "development"),
-		Port:             getEnv("PORT", getEnv("APP_PORT", defaultPort)),
-		LogLevel:         getEnv("LOG_LEVEL", "info"),
-		CORSAllowOrigins: getEnv("CORS_ALLOW_ORIGINS", "*"),
-		AIProvider:       getEnv("AI_PROVIDER", "gemini"),
-		GeminiAPIKey:     os.Getenv("GEMINI_API_KEY"),
-		GeminiModel:      getEnv("GEMINI_MODEL", "gemini-2.5-flash"),
+		AppEnv:             getEnv("APP_ENV", "development"),
+		Port:               getEnv("PORT", getEnv("APP_PORT", defaultPort)),
+		LogLevel:           getEnv("LOG_LEVEL", "info"),
+		CORSAllowOrigins:   getEnv("CORS_ALLOW_ORIGINS", "*"),
+		AIProvider:         getEnv("AI_PROVIDER", "gemini"),
+		AIFallbackEnabled:  getEnvBool("AI_FALLBACK_ENABLED", false),
+		AIFallbackProvider: getEnv("AI_FALLBACK_PROVIDER", ""),
+		GeminiAPIKey:       os.Getenv("GEMINI_API_KEY"),
+		GeminiModel:        getEnv("GEMINI_MODEL", "gemini-2.5-flash"),
 		HuggingFace: HuggingFaceConfig{
 			APIToken: os.Getenv("HUGGINGFACE_API_TOKEN"),
 			Model:    getEnv("HUGGINGFACE_MODEL", "Qwen/Qwen2.5-7B-Instruct"),

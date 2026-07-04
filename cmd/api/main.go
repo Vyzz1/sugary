@@ -46,31 +46,41 @@ func main() {
 	geminiNutritionAnalyzer := ai.NewGeminiNutritionAnalyzer(cfg.GeminiAPIKey, cfg.GeminiModel)
 	geminiDailyReportInterpreter := ai.NewGeminiDailyReportInterpreter(cfg.GeminiAPIKey, cfg.GeminiModel)
 	geminiWeeklyReportInterpreter := ai.NewGeminiWeeklyReportInterpreter(cfg.GeminiAPIKey, cfg.GeminiModel)
-	nutritionAnalyzer := domain.NutritionAnalyzer(geminiNutritionAnalyzer)
-	dailyReportInterpreter := domain.DailyReportInterpreter(geminiDailyReportInterpreter)
-	weeklyReportInterpreter := domain.WeeklyReportInterpreter(geminiWeeklyReportInterpreter)
-	if strings.EqualFold(strings.TrimSpace(cfg.AIProvider), "huggingface") {
-		huggingFaceConfig := ai.HuggingFaceConfig{
-			APIToken: cfg.HuggingFace.APIToken,
-			Model:    cfg.HuggingFace.Model,
-			APIURL:   cfg.HuggingFace.APIURL,
-		}
-		nutritionAnalyzer = ai.NewFallbackNutritionAnalyzer(
-			ai.NewHuggingFaceNutritionAnalyzer(huggingFaceConfig),
-			geminiNutritionAnalyzer,
-		)
-		dailyReportInterpreter = ai.NewFallbackDailyReportInterpreter(
-			ai.NewHuggingFaceDailyReportInterpreter(huggingFaceConfig),
-			geminiDailyReportInterpreter,
-		)
-		weeklyReportInterpreter = ai.NewFallbackWeeklyReportInterpreter(
-			ai.NewHuggingFaceWeeklyReportInterpreter(huggingFaceConfig),
-			geminiWeeklyReportInterpreter,
-		)
-		logger.Info("ai_provider_selected", zap.String("provider", "huggingface"), zap.String("fallback", "gemini"))
-	} else {
-		logger.Info("ai_provider_selected", zap.String("provider", "gemini"))
+	providers := aiProviders{
+		aiProviderGemini: aiProviderBundle{
+			nutritionAnalyzer:       geminiNutritionAnalyzer,
+			dailyReportInterpreter:  geminiDailyReportInterpreter,
+			weeklyReportInterpreter: geminiWeeklyReportInterpreter,
+		},
+		aiProviderHuggingFace: newHuggingFaceProviderBundle(cfg.HuggingFace),
 	}
+	primaryProvider := normalizeAIProvider(cfg.AIProvider)
+	primary, ok := providers[primaryProvider]
+	if !ok {
+		logger.Error("ai_provider_unsupported", zap.String("provider", cfg.AIProvider))
+		return
+	}
+
+	nutritionAnalyzer := primary.nutritionAnalyzer
+	dailyReportInterpreter := primary.dailyReportInterpreter
+	weeklyReportInterpreter := primary.weeklyReportInterpreter
+	fallbackProvider := normalizeOptionalAIProvider(cfg.AIFallbackProvider)
+	fallbackEnabled := cfg.AIFallbackEnabled && fallbackProvider != "" && fallbackProvider != primaryProvider
+	if fallbackEnabled {
+		fallback, ok := providers[fallbackProvider]
+		if !ok {
+			logger.Error("ai_fallback_provider_unsupported", zap.String("provider", cfg.AIFallbackProvider))
+			return
+		}
+		nutritionAnalyzer = ai.NewFallbackNutritionAnalyzer(primary.nutritionAnalyzer, fallback.nutritionAnalyzer)
+		dailyReportInterpreter = ai.NewFallbackDailyReportInterpreter(primary.dailyReportInterpreter, fallback.dailyReportInterpreter)
+		weeklyReportInterpreter = ai.NewFallbackWeeklyReportInterpreter(primary.weeklyReportInterpreter, fallback.weeklyReportInterpreter)
+	}
+	logger.Info("ai_provider_selected",
+		zap.String("provider", primaryProvider),
+		zap.Bool("fallback_enabled", fallbackEnabled),
+		zap.String("fallback_provider", fallbackProvider),
+	)
 	fileUploader := uploadproxy.NewHTTPUploader(cfg.Upload)
 	reportEmailSender, err := mail.NewBrevoReportEmailSender(cfg.Brevo)
 	if err != nil {
@@ -172,5 +182,51 @@ func main() {
 
 	if err := router.Run(":" + cfg.Port); err != nil {
 		logger.Error("http_server_failed", zap.Error(err), zap.String("port", cfg.Port))
+	}
+}
+
+type aiProviderBundle struct {
+	nutritionAnalyzer       domain.NutritionAnalyzer
+	dailyReportInterpreter  domain.DailyReportInterpreter
+	weeklyReportInterpreter domain.WeeklyReportInterpreter
+}
+
+type aiProviders map[string]aiProviderBundle
+
+const (
+	aiProviderGemini      = "gemini"
+	aiProviderHuggingFace = "huggingface"
+)
+
+func normalizeAIProvider(provider string) string {
+	provider = strings.TrimSpace(strings.ToLower(provider))
+	switch provider {
+	case aiProviderHuggingFace, "huggie":
+		return aiProviderHuggingFace
+	case aiProviderGemini, "":
+		return aiProviderGemini
+	default:
+		return provider
+	}
+}
+
+func normalizeOptionalAIProvider(provider string) string {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return ""
+	}
+	return normalizeAIProvider(provider)
+}
+
+func newHuggingFaceProviderBundle(cfg config.HuggingFaceConfig) aiProviderBundle {
+	huggingFaceConfig := ai.HuggingFaceConfig{
+		APIToken: cfg.APIToken,
+		Model:    cfg.Model,
+		APIURL:   cfg.APIURL,
+	}
+	return aiProviderBundle{
+		nutritionAnalyzer:       ai.NewHuggingFaceNutritionAnalyzer(huggingFaceConfig),
+		dailyReportInterpreter:  ai.NewHuggingFaceDailyReportInterpreter(huggingFaceConfig),
+		weeklyReportInterpreter: ai.NewHuggingFaceWeeklyReportInterpreter(huggingFaceConfig),
 	}
 }
